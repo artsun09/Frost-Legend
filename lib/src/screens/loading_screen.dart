@@ -51,8 +51,6 @@ class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProvider
         setState(() => _loaded = p);
       }
     });
-    await Atlas.trim(A.vNotif);
-    await Atlas.trim(A.hNotif);
     await pacing;
     if (mounted) {
       widget.onDone();

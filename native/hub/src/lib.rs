@@ -10,7 +10,7 @@ mod vault;
 use engine::Command;
 use rinf::{DartSignal, dart_shutdown, write_interface};
 use signals::{
-    BootRequest, ChangeBet, EnterRoom, NotificationsAnswered, RefillRequest, SpinRequest,
+    BootRequest, ChangeBet, EnterRoom, RefillRequest, SpinRequest,
     WheelSpinRequest,
 };
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
@@ -41,7 +41,6 @@ async fn main() {
     forward::<SpinRequest>(&outbox, Command::Spin);
     forward::<WheelSpinRequest>(&outbox, Command::Wheel);
     forward::<RefillRequest>(&outbox, Command::Refill);
-    forward::<NotificationsAnswered>(&outbox, Command::Notifications);
     tokio::spawn(engine::run(inbox));
     dart_shutdown().await;
 }

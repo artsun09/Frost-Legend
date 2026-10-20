@@ -9,9 +9,6 @@ pub enum Txt {
     Tip1,
     Tip2,
     Tip3,
-    Allow,
-    Later,
-    NotifHint,
     Play,
     ChooseRealm,
     DailyWheel,
@@ -75,16 +72,13 @@ pub enum Txt {
     Of,
 }
 
-const ALL_TXT: [Txt; 70] = [
+const ALL_TXT: [Txt; 67] = [
     Txt::AppTitle,
     Txt::FontFamily,
     Txt::Loading,
     Txt::Tip1,
     Txt::Tip2,
     Txt::Tip3,
-    Txt::Allow,
-    Txt::Later,
-    Txt::NotifHint,
     Txt::Play,
     Txt::ChooseRealm,
     Txt::DailyWheel,
@@ -156,9 +150,6 @@ pub fn text(t: Txt) -> String {
         Txt::Tip1 => obfstring!("Land 3 SCATTERS to spin the Bonus Wheel"),
         Txt::Tip2 => obfstring!("Spin the Daily Wheel every 4 hours for free coins"),
         Txt::Tip3 => obfstring!("Level up to unlock new realms and bigger bets"),
-        Txt::Allow => obfstring!("ALLOW"),
-        Txt::Later => obfstring!("MAYBE LATER"),
-        Txt::NotifHint => obfstring!("Get reminders when your Daily Wheel is ready"),
         Txt::Play => obfstring!("PLAY"),
         Txt::ChooseRealm => obfstring!("CHOOSE YOUR REALM"),
         Txt::DailyWheel => obfstring!("DAILY WHEEL"),
@@ -257,10 +248,8 @@ pub enum Ast {
     Zeus,
     GameName,
     HLoading,
-    HNotif,
     Icon,
     VLoading,
-    VNotif,
 }
 
 impl Ast {
@@ -300,10 +289,8 @@ pub fn assets() -> Vec<String> {
     let additional = [
         obfstring!("Game_Name.webp"),
         obfstring!("Horizontal_Loading_Screen.webp"),
-        obfstring!("Horizontal_Notifications_Screen.webp"),
         obfstring!("Icon.webp"),
         obfstring!("Vertical_Loading_Screen.webp"),
-        obfstring!("Vertical_Notifications_Screen.webp"),
     ];
     gameplay
         .iter()

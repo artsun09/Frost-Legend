@@ -8,9 +8,6 @@ enum T {
   tip1,
   tip2,
   tip3,
-  allow,
-  later,
-  notifHint,
   play,
   chooseRealm,
   dailyWheel,
@@ -101,10 +98,8 @@ enum A {
   zeus,
   gameName,
   hLoading,
-  hNotif,
   icon,
   vLoading,
-  vNotif,
 }
 
 /// External links. Order mirrors `links()` in `native/hub/src/lexicon.rs`.

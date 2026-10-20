@@ -7,7 +7,7 @@ use crate::math::{
 use crate::profile::{Profile, ROOM_COUNT};
 use crate::rng::Rng;
 use crate::signals::{
-    BootRequest, ChangeBet, EnterRoom, Lexicon, LineWin, NotificationsAnswered, PlayerState,
+    BootRequest, ChangeBet, EnterRoom, Lexicon, LineWin, PlayerState,
     RefillRequest, SpinOutcome, SpinRequest, StateUpdate, Toast, WheelOutcome, WheelSpinRequest,
 };
 use crate::vault::Vault;
@@ -22,7 +22,6 @@ pub enum Command {
     Spin(SpinRequest),
     Wheel(WheelSpinRequest),
     Refill(RefillRequest),
-    Notifications(NotificationsAnswered),
 }
 
 pub async fn run(mut inbox: UnboundedReceiver<Command>) {
@@ -83,11 +82,6 @@ impl Engine {
             Command::Spin(_) => self.spin(),
             Command::Wheel(req) => self.spin_wheel(req.daily),
             Command::Refill(req) => self.refill(req.accepted),
-            Command::Notifications(_) => {
-                self.profile.notifications_asked = true;
-                self.persist();
-                self.push_state();
-            }
         }
     }
 
@@ -194,7 +188,6 @@ impl Engine {
             jackpots: (0..4)
                 .map(|j| jackpot_value(j, bet, p.pools[jackpot_room][j]))
                 .collect(),
-            notifications_asked: p.notifications_asked,
             spins: p.spins,
             biggest_win: p.biggest_win,
         }

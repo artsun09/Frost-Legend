@@ -10,7 +10,6 @@ pub struct Profile {
     pub level: u32,
     pub xp: i64,
     pub daily_last: i64,
-    pub notifications_asked: bool,
     pub pools: [[i64; 4]; ROOM_COUNT],
     pub fs_room: i32,
     pub fs_left: u32,
@@ -29,7 +28,6 @@ impl Default for Profile {
             level: 1,
             xp: 0,
             daily_last: 0,
-            notifications_asked: false,
             pools: [[0; 4]; ROOM_COUNT],
             fs_room: -1,
             fs_left: 0,
@@ -73,7 +71,7 @@ impl Profile {
         out.extend_from_slice(&self.level.to_le_bytes());
         out.extend_from_slice(&self.xp.to_le_bytes());
         out.extend_from_slice(&self.daily_last.to_le_bytes());
-        out.extend_from_slice(&u32::from(self.notifications_asked).to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes());
         for room in &self.pools {
             for pool in room {
                 out.extend_from_slice(&pool.to_le_bytes());
@@ -99,7 +97,7 @@ impl Profile {
         let level = r.u32()?.max(1);
         let xp = r.i64()?;
         let daily_last = r.i64()?;
-        let notifications_asked = r.u32()? != 0;
+        r.u32()?;
         let mut pools = [[0i64; 4]; ROOM_COUNT];
         for room in pools.iter_mut() {
             for pool in room.iter_mut() {
@@ -112,7 +110,6 @@ impl Profile {
             level,
             xp,
             daily_last,
-            notifications_asked,
             pools,
             fs_room: r.i32()?,
             fs_left: r.u32()?,

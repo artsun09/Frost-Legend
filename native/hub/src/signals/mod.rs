@@ -31,11 +31,6 @@ pub struct RefillRequest {
     pub accepted: bool,
 }
 
-#[derive(Deserialize, DartSignal)]
-pub struct NotificationsAnswered {
-    pub granted: bool,
-}
-
 #[derive(Serialize, RustSignal)]
 pub struct Lexicon {
     pub texts: Vec<String>,
@@ -136,7 +131,6 @@ pub struct PlayerState {
     pub refill_ready: bool,
     pub refill_amount: i64,
     pub jackpots: Vec<i64>,
-    pub notifications_asked: bool,
     pub spins: i64,
     pub biggest_win: i64,
 }

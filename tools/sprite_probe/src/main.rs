@@ -90,15 +90,31 @@ fn icons(src: &Path, res: &Path) {
         eprintln!("cannot open {}", src.display());
         return;
     };
-    let sizes = [("mdpi", 48), ("hdpi", 72), ("xhdpi", 96), ("xxhdpi", 144), ("xxxhdpi", 192)];
-    for (bucket, size) in sizes {
+    let sizes = [("mdpi", 1.0), ("hdpi", 1.5), ("xhdpi", 2.0), ("xxhdpi", 3.0), ("xxxhdpi", 4.0)];
+    for (bucket, density) in sizes {
         let dir = res.join(format!("mipmap-{bucket}"));
         let _ = std::fs::create_dir_all(&dir);
-        let icon = img.resize_exact(size, size, FilterType::Lanczos3);
+        let _ = std::fs::remove_file(dir.join("ic_launcher_art.png"));
+
+        let legacy = (48.0 * density) as u32;
+        let icon = img.resize_exact(legacy, legacy, FilterType::Lanczos3);
         let _ = icon.save(dir.join("ic_launcher.png"));
-        let fg = (size as f32 * 2.25) as u32;
-        let layer = img.resize_exact(fg, fg, FilterType::Lanczos3);
-        let _ = layer.save(dir.join("ic_launcher_art.png"));
+
+        // Adaptive layers are 108dp; launchers show the central 72dp and
+        // guarantee only the central 66dp, so the art sits at 88dp.
+        let canvas = (108.0 * density) as u32;
+        let background = img
+            .resize_exact(canvas, canvas, FilterType::Triangle)
+            .blur(6.0 * density)
+            .brighten(-18);
+        let _ = background.save(dir.join("ic_launcher_background.png"));
+
+        let art = (88.0 * density) as u32;
+        let scaled = img.resize_exact(art, art, FilterType::Lanczos3).to_rgba8();
+        let mut foreground = image::RgbaImage::new(canvas, canvas);
+        let offset = i64::from((canvas - art) / 2);
+        image::imageops::overlay(&mut foreground, &scaled, offset, offset);
+        let _ = foreground.save(dir.join("ic_launcher_foreground.png"));
     }
     println!("icons written");
 }

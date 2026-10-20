@@ -83,9 +83,6 @@ class GameBridge extends ChangeNotifier {
 
   void refill() => const RefillRequest(accepted: true).sendSignalToRust();
 
-  void answerNotifications(bool granted) =>
-      NotificationsAnswered(granted: granted).sendSignalToRust();
-
   RoomDef? room(int index) {
     final rooms = catalog?.rooms;
     if (rooms == null || index < 0 || index >= rooms.length) {
