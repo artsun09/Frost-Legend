@@ -80,6 +80,12 @@ class AssetArt extends StatelessWidget {
     if (image == null) {
       return const SizedBox.shrink();
     }
+    final crop = Atlas.opaque(asset);
+    if (crop != null) {
+      return SizedBox.expand(
+        child: CustomPaint(painter: _CroppedArtPainter(image, crop, fit, alignment)),
+      );
+    }
     return RawImage(
       image: image,
       fit: fit,
@@ -91,6 +97,26 @@ class AssetArt extends StatelessWidget {
       height: double.infinity,
     );
   }
+}
+
+class _CroppedArtPainter extends CustomPainter {
+  _CroppedArtPainter(this.image, this.crop, this.fit, this.alignment);
+
+  final ui.Image image;
+  final Rect crop;
+  final BoxFit fit;
+  final Alignment alignment;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final fitted = applyBoxFit(fit, crop.size, size);
+    final src = alignment.inscribe(fitted.source, crop);
+    final dst = alignment.inscribe(fitted.destination, Offset.zero & size);
+    canvas.drawImageRect(image, src, dst, Paint()..filterQuality = FilterQuality.medium);
+  }
+
+  @override
+  bool shouldRepaint(_CroppedArtPainter old) => old.image != image || old.crop != crop || old.fit != fit;
 }
 
 /// Bold display text with a dark outline and a gradient fill.

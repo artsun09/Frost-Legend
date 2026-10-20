@@ -39,6 +39,8 @@ class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProvider
   Future<void> _run() async {
     await Atlas.loadOne(A.vLoading.index);
     await Atlas.loadOne(A.hLoading.index);
+    await Atlas.trim(A.vLoading);
+    await Atlas.trim(A.hLoading);
     if (!mounted) {
       return;
     }
@@ -49,6 +51,8 @@ class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProvider
         setState(() => _loaded = p);
       }
     });
+    await Atlas.trim(A.vNotif);
+    await Atlas.trim(A.hNotif);
     await pacing;
     if (mounted) {
       widget.onDone();

@@ -385,7 +385,7 @@ class _WheelPainter extends CustomPainter {
         paintSprite(canvas, badges[kind - 2], Rect.fromCenter(center: Offset(0, -radius), width: h * 0.82, height: h));
       } else {
         canvas.rotate(-math.pi / 2);
-        _label(canvas, def.labels[i], Color(i < def.colors.length ? def.colors[i] : 0xFFFFFFFF), side, radius);
+        _label(canvas, def.labels[i], Color(i < def.colors.length ? def.colors[i] : 0xFFFFFFFF), side, radius, disc * 0.6);
       }
       canvas.restore();
     }
@@ -436,8 +436,13 @@ class _WheelPainter extends CustomPainter {
     canvas.restore();
   }
 
-  void _label(Canvas canvas, String text, Color color, double side, double radius) {
-    final fontSize = side * 0.058;
+  void _label(Canvas canvas, String text, Color color, double side, double radius, double maxWidth) {
+    final base = side * 0.058;
+    final probe = TextPainter(
+      text: TextSpan(text: text, style: TextStyle(fontSize: base)),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final fontSize = probe.width > maxWidth ? base * maxWidth / probe.width : base;
     final stroke = TextPainter(
       text: TextSpan(
         text: text,
