@@ -37,7 +37,7 @@ pub const PAYLINES: [[usize; REELS]; 20] = [
     [0, 2, 2, 2, 0],
 ];
 
-const SCATTER_PAYS: [i64; 6] = [0, 0, 0, 2, 5, 20];
+const SCATTER_PAYS: [i64; 6] = [0, 0, 0, 1, 3, 10];
 
 /// What a WILD does on top of substituting.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -85,30 +85,30 @@ pub enum Segment {
 /// Bonus wheel, clockwise from the pointer. Every segment is the same size
 /// and therefore equally likely.
 pub const WHEEL: [Segment; 24] = [
+    Segment::Coins(1),
     Segment::Coins(2),
-    Segment::Coins(5),
-    Segment::Coins(2),
+    Segment::Coins(1),
     Segment::Fishing(Fish::Blue),
-    Segment::Coins(2),
-    Segment::Coins(10),
+    Segment::Coins(1),
     Segment::Coins(5),
     Segment::Coins(2),
+    Segment::Coins(1),
     Segment::Fishing(Fish::Orange),
-    Segment::Coins(5),
     Segment::Coins(2),
-    Segment::Coins(20),
+    Segment::Coins(1),
+    Segment::Coins(10),
+    Segment::Coins(1),
     Segment::Coins(2),
-    Segment::Coins(5),
     Segment::Fishing(Fish::Blue),
-    Segment::Coins(2),
-    Segment::Coins(10),
+    Segment::Coins(1),
     Segment::Coins(5),
     Segment::Coins(2),
+    Segment::Coins(1),
     Segment::Fishing(Fish::Red),
-    Segment::Coins(20),
-    Segment::Coins(5),
     Segment::Coins(10),
     Segment::Coins(2),
+    Segment::Coins(5),
+    Segment::Coins(1),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -119,31 +119,31 @@ pub enum Catch {
 }
 
 const BLUE_CATCH: [(Catch, u32); 7] = [
-    (Catch::Multiplier(10), 30),
-    (Catch::Multiplier(15), 26),
-    (Catch::Multiplier(20), 20),
-    (Catch::Multiplier(25), 12),
-    (Catch::Multiplier(40), 7),
-    (Catch::Multiplier(50), 4),
+    (Catch::Multiplier(5), 30),
+    (Catch::Multiplier(8), 26),
+    (Catch::Multiplier(10), 20),
+    (Catch::Multiplier(12), 12),
+    (Catch::Multiplier(20), 7),
+    (Catch::Multiplier(25), 4),
     (Catch::Jackpot(0), 1),
 ];
 
 const ORANGE_CATCH: [(Catch, u32); 7] = [
-    (Catch::Multiplier(25), 30),
-    (Catch::Multiplier(35), 25),
-    (Catch::Multiplier(50), 20),
-    (Catch::Multiplier(75), 12),
-    (Catch::Multiplier(100), 7),
+    (Catch::Multiplier(12), 30),
+    (Catch::Multiplier(18), 25),
+    (Catch::Multiplier(25), 20),
+    (Catch::Multiplier(35), 12),
+    (Catch::Multiplier(50), 7),
     (Catch::Jackpot(0), 4),
     (Catch::Jackpot(1), 2),
 ];
 
 const RED_CATCH: [(Catch, u32); 8] = [
-    (Catch::Multiplier(50), 30),
-    (Catch::Multiplier(75), 25),
-    (Catch::Multiplier(100), 18),
-    (Catch::Multiplier(150), 12),
-    (Catch::Multiplier(250), 6),
+    (Catch::Multiplier(25), 30),
+    (Catch::Multiplier(35), 25),
+    (Catch::Multiplier(50), 18),
+    (Catch::Multiplier(75), 12),
+    (Catch::Multiplier(125), 6),
     (Catch::Jackpot(1), 4),
     (Catch::Jackpot(2), 2),
     (Catch::Jackpot(3), 1),

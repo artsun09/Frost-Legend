@@ -152,26 +152,26 @@ fn zeus_bust() -> Sprite {
 }
 
 /// Percentage applied to every line pay.
-const PAY_SCALE: i64 = 58;
+const PAY_SCALE: i64 = 56;
 
 fn symbols() -> Vec<Sym> {
     vec![
-        sym(gem(2), 20, [5, 15, 50], 0xFF3DFF8F),
-        sym(candy(0), 20, [5, 15, 60], 0xFFFF4D6B),
-        sym(fruit2(0), 19, [10, 25, 75], 0xFFFFE04D),
-        sym(fruit(0), 19, [10, 30, 100], 0xFFFF3D5A),
-        sym(gem(0), 18, [15, 40, 125], 0xFF4DA6FF),
-        sym(sprite(Ast::Lollipop, 15.0, 14.0, 145.0, 137.0), 13, [20, 60, 200], 0xFFFF6BC4),
-        sym(sprite(Ast::Bells, 11.0, 8.0, 75.0, 83.0), 12, [25, 75, 250], 0xFFFFD24D),
-        sym(sprite(Ast::Bar, 3.0, 26.0, 95.0, 49.0), 10, [30, 100, 300], 0xFFFF3D3D),
-        sym(magic(1), 8, [50, 150, 500], 0xFFFFE07A),
-        sym(fish(1), 10, [15, 50, 150], 0xFF4DC3FF),
-        sym(fish(2), 8, [25, 75, 250], 0xFFFFB04D),
-        sym(fish(0), 6, [40, 120, 400], 0xFFFF6B4D),
-        wild(fisherman_bust(), 3, WildPower::Collect, 0xFF9FE6FF),
-        wild(joker_head(), 3, WildPower::Expand, 0xFFFFC640),
-        wild(zeus_bust(), 3, WildPower::Lightning, 0xFFFFE27A),
-        scatter(9),
+        sym(gem(2), 40, [5, 15, 50], 0xFF3DFF8F),
+        sym(candy(0), 40, [5, 15, 60], 0xFFFF4D6B),
+        sym(fruit2(0), 38, [10, 25, 75], 0xFFFFE04D),
+        sym(fruit(0), 38, [10, 30, 100], 0xFFFF3D5A),
+        sym(gem(0), 36, [15, 40, 125], 0xFF4DA6FF),
+        sym(sprite(Ast::Lollipop, 15.0, 14.0, 145.0, 137.0), 26, [20, 60, 200], 0xFFFF6BC4),
+        sym(sprite(Ast::Bells, 11.0, 8.0, 75.0, 83.0), 24, [25, 75, 250], 0xFFFFD24D),
+        sym(sprite(Ast::Bar, 3.0, 26.0, 95.0, 49.0), 20, [30, 100, 300], 0xFFFF3D3D),
+        sym(magic(1), 16, [50, 150, 500], 0xFFFFE07A),
+        sym(fish(1), 20, [15, 50, 150], 0xFF4DC3FF),
+        sym(fish(2), 16, [25, 75, 250], 0xFFFFB04D),
+        sym(fish(0), 12, [40, 120, 400], 0xFFFF6B4D),
+        wild(fisherman_bust(), 6, WildPower::Collect, 0xFF9FE6FF),
+        wild(joker_head(), 6, WildPower::Expand, 0xFFFFC640),
+        wild(zeus_bust(), 6, WildPower::Lightning, 0xFFFFE27A),
+        scatter(25),
     ]
 }
 

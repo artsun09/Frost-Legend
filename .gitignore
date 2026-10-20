@@ -54,3 +54,9 @@ app.*.map.json
 # Local device screenshots and logs
 /shots/
 build_log.txt
+
+# Release signing and artifacts
+*.jks
+*.keystore
+/android/key.properties
+/release/
