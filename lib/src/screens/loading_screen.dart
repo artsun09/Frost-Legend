@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../core/atlas.dart';
@@ -21,19 +19,12 @@ class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProvider
 
   bool _artReady = false;
   double _loaded = 0;
-  int _tip = 0;
-  Timer? _tipTimer;
   late final AnimationController _shown = AnimationController(vsync: this, duration: _minimum);
 
   @override
   void initState() {
     super.initState();
     _run();
-    _tipTimer = Timer.periodic(const Duration(milliseconds: 1600), (_) {
-      if (mounted) {
-        setState(() => _tip = (_tip + 1) % 3);
-      }
-    });
   }
 
   Future<void> _run() async {
@@ -59,7 +50,6 @@ class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProvider
 
   @override
   void dispose() {
-    _tipTimer?.cancel();
     _shown.dispose();
     super.dispose();
   }
@@ -67,7 +57,6 @@ class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProvider
   @override
   Widget build(BuildContext context) {
     final landscape = MediaQuery.orientationOf(context) == Orientation.landscape;
-    final tips = [T.tip1, T.tip2, T.tip3];
     return Scaffold(
       backgroundColor: frostNight,
       body: Stack(
@@ -111,16 +100,6 @@ class _LoadingScreenState extends State<LoadingScreen> with SingleTickerProvider
                           final shown = _shown.value < _loaded ? _shown.value : _loaded;
                           return _ProgressBar(value: shown);
                         },
-                      ),
-                      const SizedBox(height: 12),
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 400),
-                        child: Text(
-                          tx(tips[_tip]),
-                          key: ValueKey<int>(_tip),
-                          textAlign: TextAlign.center,
-                          style: display(14, color: iceWhite),
-                        ),
                       ),
                     ],
                   ),

@@ -6,9 +6,6 @@ pub enum Txt {
     AppTitle,
     FontFamily,
     Loading,
-    Tip1,
-    Tip2,
-    Tip3,
     Settings,
     Privacy,
     Support,
@@ -68,13 +65,10 @@ pub enum Txt {
     Tension,
 }
 
-const ALL_TXT: [Txt; 63] = [
+const ALL_TXT: [Txt; 60] = [
     Txt::AppTitle,
     Txt::FontFamily,
     Txt::Loading,
-    Txt::Tip1,
-    Txt::Tip2,
-    Txt::Tip3,
     Txt::Settings,
     Txt::Privacy,
     Txt::Support,
@@ -139,9 +133,6 @@ pub fn text(t: Txt) -> String {
         Txt::AppTitle => obfstring!("Frost Legend"),
         Txt::FontFamily => obfstring!("Lilita"),
         Txt::Loading => obfstring!("LOADING"),
-        Txt::Tip1 => obfstring!("Land 3 SCATTERS to spin the Ice Fishing wheel"),
-        Txt::Tip2 => obfstring!("Huge Reds hide the GRAND jackpot"),
-        Txt::Tip3 => obfstring!("Level up to unlock bigger bets"),
         Txt::Settings => obfstring!("SETTINGS"),
         Txt::Privacy => obfstring!("Privacy Policy"),
         Txt::Support => obfstring!("Support"),
