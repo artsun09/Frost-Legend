@@ -152,7 +152,7 @@ fn zeus_bust() -> Sprite {
 }
 
 /// Percentage applied to every line pay.
-const PAY_SCALE: i64 = 79;
+const PAY_SCALE: i64 = 58;
 
 fn symbols() -> Vec<Sym> {
     vec![
@@ -171,7 +171,7 @@ fn symbols() -> Vec<Sym> {
         wild(fisherman_bust(), 3, WildPower::Collect, 0xFF9FE6FF),
         wild(joker_head(), 3, WildPower::Expand, 0xFFFFC640),
         wild(zeus_bust(), 3, WildPower::Lightning, 0xFFFFE27A),
-        scatter(6),
+        scatter(9),
     ]
 }
 
