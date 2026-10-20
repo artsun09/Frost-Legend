@@ -787,6 +787,43 @@ class _CoinShowerPainter extends CustomPainter {
   bool shouldRepaint(_CoinShowerPainter old) => false;
 }
 
+/// A full image asset slowly turning around its center.
+class SpinningArt extends StatefulWidget {
+  const SpinningArt(this.asset, {super.key, this.period = const Duration(seconds: 12), this.opacity = 1});
+
+  final int asset;
+  final Duration period;
+  final double opacity;
+
+  @override
+  State<SpinningArt> createState() => _SpinningArtState();
+}
+
+class _SpinningArtState extends State<SpinningArt> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: widget.period)..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final image = Atlas.at(widget.asset);
+    if (image == null) {
+      return const SizedBox.shrink();
+    }
+    return RotationTransition(
+      turns: _c,
+      child: Opacity(
+        opacity: widget.opacity,
+        child: RawImage(image: image, fit: BoxFit.contain, filterQuality: FilterQuality.medium),
+      ),
+    );
+  }
+}
+
 Route<R> fadeRoute<R>(Widget page) {
   return PageRouteBuilder<R>(
     transitionDuration: const Duration(milliseconds: 420),

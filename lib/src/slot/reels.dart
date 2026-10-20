@@ -60,9 +60,9 @@ class _LandCurve extends Curve {
 }
 
 class ReelBoard extends StatefulWidget {
-  const ReelBoard({super.key, required this.room, required this.paylines, required this.controller});
+  const ReelBoard({super.key, required this.slot, required this.paylines, required this.controller});
 
-  final RoomDef room;
+  final SlotDef slot;
   final List<int> paylines;
   final ReelBoardController controller;
 
@@ -91,7 +91,7 @@ class _ReelBoardState extends State<ReelBoard> with SingleTickerProviderStateMix
   void initState() {
     super.initState();
     widget.controller._state = this;
-    final symbols = widget.room.symbols;
+    final symbols = widget.slot.symbols;
     _filler = [
       for (var i = 0; i < symbols.length; i++)
         if (symbols[i].kind != _kindScatter) ...[i, if (symbols[i].kind == 0 && i < symbols.length / 2) i],
@@ -180,7 +180,7 @@ class _ReelBoardState extends State<ReelBoard> with SingleTickerProviderStateMix
     if (grid.length != reelCount * rowCount) {
       return _abort();
     }
-    final scatter = widget.room.symbols.indexWhere((s) => s.kind == _kindScatter);
+    final scatter = widget.slot.symbols.indexWhere((s) => s.kind == _kindScatter);
     var scattersSoFar = 0;
     await Future<void>.delayed(Duration(milliseconds: turbo ? 120 : 320));
     for (var i = 0; i < reelCount; i++) {
@@ -247,7 +247,7 @@ class _ReelBoardState extends State<ReelBoard> with SingleTickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
-    final frame = Color(widget.room.frame);
+    final frame = Color(widget.slot.frame);
     return Container(
       padding: const EdgeInsets.all(5),
       decoration: BoxDecoration(
@@ -271,8 +271,8 @@ class _ReelBoardState extends State<ReelBoard> with SingleTickerProviderStateMix
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                Color.lerp(Color(widget.room.tint), Colors.white, 0.12)!.withValues(alpha: 0.86),
-                Color.lerp(Color(widget.room.tint), Colors.black, 0.5)!.withValues(alpha: 0.92),
+                Color.lerp(Color(widget.slot.tint), Colors.white, 0.12)!.withValues(alpha: 0.86),
+                Color.lerp(Color(widget.slot.tint), Colors.black, 0.5)!.withValues(alpha: 0.92),
               ],
             ),
           ),
@@ -297,9 +297,9 @@ class _BoardPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final cellW = size.width / reelCount;
     final cellH = size.height / rowCount;
-    final room = s.widget.room;
-    final symbols = room.symbols;
-    final accent = Color(room.accent);
+    final slot = s.widget.slot;
+    final symbols = slot.symbols;
+    final accent = Color(slot.accent);
     final showingWins = s._wins.isNotEmpty || s._scatters.isNotEmpty;
     final winTime = s._clock - s._winsSince;
 

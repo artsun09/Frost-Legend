@@ -6,9 +6,9 @@ import '../core/lexicon.dart';
 import '../ui/kit.dart';
 import '../ui/palette.dart';
 import 'loading_screen.dart';
-import 'lobby_screen.dart';
+import 'slot_screen.dart';
 
-enum Stage { loading, lobby }
+enum Stage { loading, slot }
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -31,10 +31,10 @@ class _AppShellState extends State<AppShell> {
     });
   }
 
-  Future<void> _openLobby() async {
+  Future<void> _openSlot() async {
     await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     if (mounted) {
-      setState(() => _stage = Stage.lobby);
+      setState(() => _stage = Stage.slot);
     }
   }
 
@@ -57,8 +57,8 @@ class _AppShellState extends State<AppShell> {
       home: AnimatedSwitcher(
         duration: const Duration(milliseconds: 600),
         child: switch (_stage) {
-          Stage.loading => LoadingScreen(key: const ValueKey<Stage>(Stage.loading), onDone: _openLobby),
-          Stage.lobby => const LobbyScreen(key: ValueKey<Stage>(Stage.lobby)),
+          Stage.loading => LoadingScreen(key: const ValueKey<Stage>(Stage.loading), onDone: _openSlot),
+          Stage.slot => const SlotScreen(key: ValueKey<Stage>(Stage.slot)),
         },
       ),
     );

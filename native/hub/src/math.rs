@@ -39,40 +39,130 @@ pub const PAYLINES: [[usize; REELS]; 20] = [
 
 const SCATTER_PAYS: [i64; 6] = [0, 0, 0, 2, 5, 20];
 
+/// What a WILD does on top of substituting.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Feature {
-    /// Fish carry coin values that every WILD on screen collects.
-    FishCollect,
-    /// A WILD on reels 2-4 grows to cover the whole reel.
-    ExpandingWild,
-    /// Zeus throws a random multiplier onto a winning spin.
+pub enum WildPower {
+    /// Collects the coin value of every fish on screen.
+    Collect,
+    /// Grows to cover its whole reel on reels 2-4.
+    Expand,
+    /// Multiplies the spin's line and collect wins.
     Lightning,
 }
 
-#[derive(Clone, Copy)]
-pub enum Prize {
+/// One of the three fishing bonus pools on the wheel.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Fish {
+    Blue,
+    Orange,
+    Red,
+}
+
+pub const FISH_KINDS: [Fish; 3] = [Fish::Blue, Fish::Orange, Fish::Red];
+
+impl Fish {
+    pub fn index(self) -> usize {
+        match self {
+            Fish::Blue => 0,
+            Fish::Orange => 1,
+            Fish::Red => 2,
+        }
+    }
+
+    pub fn from_index(index: i32) -> Option<Fish> {
+        usize::try_from(index).ok().and_then(|i| FISH_KINDS.get(i).copied())
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Segment {
+    /// Pays this many total bets.
     Coins(i64),
-    FreeSpins(u32),
+    /// Starts the fishing bonus with this pool.
+    Fishing(Fish),
+}
+
+/// Bonus wheel, clockwise from the pointer. Every segment is the same size
+/// and therefore equally likely.
+pub const WHEEL: [Segment; 24] = [
+    Segment::Coins(2),
+    Segment::Coins(5),
+    Segment::Coins(2),
+    Segment::Fishing(Fish::Blue),
+    Segment::Coins(2),
+    Segment::Coins(10),
+    Segment::Coins(5),
+    Segment::Coins(2),
+    Segment::Fishing(Fish::Orange),
+    Segment::Coins(5),
+    Segment::Coins(2),
+    Segment::Coins(20),
+    Segment::Coins(2),
+    Segment::Coins(5),
+    Segment::Fishing(Fish::Blue),
+    Segment::Coins(2),
+    Segment::Coins(10),
+    Segment::Coins(5),
+    Segment::Coins(2),
+    Segment::Fishing(Fish::Red),
+    Segment::Coins(20),
+    Segment::Coins(5),
+    Segment::Coins(10),
+    Segment::Coins(2),
+];
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Catch {
+    /// Pays this many total bets.
+    Multiplier(i64),
     Jackpot(usize),
 }
 
-#[derive(Clone, Copy)]
-pub struct WheelSeg {
-    pub prize: Prize,
-    pub weight: u32,
+const BLUE_CATCH: [(Catch, u32); 7] = [
+    (Catch::Multiplier(10), 30),
+    (Catch::Multiplier(15), 26),
+    (Catch::Multiplier(20), 20),
+    (Catch::Multiplier(25), 12),
+    (Catch::Multiplier(40), 7),
+    (Catch::Multiplier(50), 4),
+    (Catch::Jackpot(0), 1),
+];
+
+const ORANGE_CATCH: [(Catch, u32); 7] = [
+    (Catch::Multiplier(25), 30),
+    (Catch::Multiplier(35), 25),
+    (Catch::Multiplier(50), 20),
+    (Catch::Multiplier(75), 12),
+    (Catch::Multiplier(100), 7),
+    (Catch::Jackpot(0), 4),
+    (Catch::Jackpot(1), 2),
+];
+
+const RED_CATCH: [(Catch, u32); 8] = [
+    (Catch::Multiplier(50), 30),
+    (Catch::Multiplier(75), 25),
+    (Catch::Multiplier(100), 18),
+    (Catch::Multiplier(150), 12),
+    (Catch::Multiplier(250), 6),
+    (Catch::Jackpot(1), 4),
+    (Catch::Jackpot(2), 2),
+    (Catch::Jackpot(3), 1),
+];
+
+pub fn catch_table(fish: Fish) -> &'static [(Catch, u32)] {
+    match fish {
+        Fish::Blue => &BLUE_CATCH,
+        Fish::Orange => &ORANGE_CATCH,
+        Fish::Red => &RED_CATCH,
+    }
 }
 
-pub struct RoomMath {
+pub struct SlotMath {
     pub weights: Vec<u32>,
     pub pays: Vec<[i64; 3]>,
-    pub kinds: Vec<u32>,
-    pub wild: usize,
+    pub wilds: Vec<(usize, WildPower)>,
     pub scatter: usize,
-    pub feature: Feature,
     pub collectors: Vec<usize>,
-    pub fs_multiplier: u32,
-    pub wheel: Vec<WheelSeg>,
-    pub unlock_level: u32,
 }
 
 pub struct LineHit {
@@ -92,10 +182,8 @@ pub struct SpinResult {
     pub scatter_win: i64,
     pub collect_win: i64,
     pub multiplier: u32,
-    pub lightning: bool,
     pub total_win: i64,
     pub wheel_triggered: bool,
-    pub free_spins_added: u32,
 }
 
 pub fn cell(reel: usize, row: usize) -> usize {
@@ -115,21 +203,36 @@ const FISH_VALUES: [(i64, u32); 7] = [
 
 const LIGHTNING: [(u32, u32); 4] = [(2, 46), (3, 30), (5, 17), (10, 7)];
 
-fn pick_pair<T: Copy>(rng: &mut Rng, table: &[(T, u32)]) -> T {
+pub fn pick<T: Copy>(rng: &mut Rng, table: &[(T, u32)]) -> T {
     let weights: Vec<u32> = table.iter().map(|(_, w)| *w).collect();
     table[rng.weighted(&weights)].0
 }
 
-impl RoomMath {
+impl SlotMath {
+    fn is_wild(&self, symbol: usize) -> bool {
+        self.wilds.iter().any(|(s, _)| *s == symbol)
+    }
+
+    fn power_of(&self, symbol: usize) -> Option<WildPower> {
+        self.wilds.iter().find(|(s, _)| *s == symbol).map(|(_, p)| *p)
+    }
+
     fn draw_reel(&self, rng: &mut Rng, reel: usize) -> [usize; ROWS] {
         let mut weights = self.weights.clone();
         if reel == 0 {
-            weights[self.wild] = 0;
+            for (wild, _) in &self.wilds {
+                weights[*wild] = 0;
+            }
         }
         let mut column = [0usize; ROWS];
         for slot in column.iter_mut() {
             let symbol = rng.weighted(&weights);
-            if symbol == self.scatter || symbol == self.wild {
+            if self.is_wild(symbol) {
+                for (wild, _) in &self.wilds {
+                    weights[*wild] = 0;
+                }
+            }
+            if symbol == self.scatter {
                 weights[symbol] = 0;
             }
             *slot = symbol;
@@ -137,7 +240,7 @@ impl RoomMath {
         column
     }
 
-    pub fn spin(&self, rng: &mut Rng, bet: i64, free_spin: bool) -> SpinResult {
+    pub fn spin(&self, rng: &mut Rng, bet: i64) -> SpinResult {
         let mut grid = [0usize; CELLS];
         for reel in 0..REELS {
             let column = self.draw_reel(rng, reel);
@@ -147,23 +250,22 @@ impl RoomMath {
         }
 
         let mut expanded = Vec::new();
-        if self.feature == Feature::ExpandingWild {
-            for reel in 1..REELS - 1 {
-                if (0..ROWS).any(|row| grid[cell(reel, row)] == self.wild) {
-                    expanded.push(reel);
-                    for row in 0..ROWS {
-                        grid[cell(reel, row)] = self.wild;
-                    }
+        for reel in 1..REELS - 1 {
+            let joker = (0..ROWS)
+                .map(|row| grid[cell(reel, row)])
+                .find(|s| self.power_of(*s) == Some(WildPower::Expand));
+            if let Some(joker) = joker {
+                expanded.push(reel);
+                for row in 0..ROWS {
+                    grid[cell(reel, row)] = joker;
                 }
             }
         }
 
         let mut cell_values = [0i64; CELLS];
-        if self.feature == Feature::FishCollect {
-            for (index, symbol) in grid.iter().enumerate() {
-                if self.collectors.contains(symbol) {
-                    cell_values[index] = bet * pick_pair(rng, &FISH_VALUES) / 100;
-                }
+        for (index, symbol) in grid.iter().enumerate() {
+            if self.collectors.contains(symbol) {
+                cell_values[index] = bet * pick(rng, &FISH_VALUES) / 100;
             }
         }
 
@@ -174,39 +276,32 @@ impl RoomMath {
         let scatter_count = scatter_cells.len().min(SCATTER_PAYS.len() - 1);
         let scatter_win = bet * SCATTER_PAYS[scatter_count];
 
-        let wilds = grid.iter().filter(|s| **s == self.wild).count() as i64;
-        let collect_win = if self.feature == Feature::FishCollect && wilds > 0 {
-            cell_values.iter().sum::<i64>() * wilds.min(3)
+        let fishermen = grid
+            .iter()
+            .filter(|s| self.power_of(**s) == Some(WildPower::Collect))
+            .count() as i64;
+        let collect_win = cell_values.iter().sum::<i64>() * fishermen.min(3);
+
+        let zeus = grid.iter().any(|s| self.power_of(*s) == Some(WildPower::Lightning));
+        let multiplier = if zeus && line_total + collect_win > 0 {
+            pick(rng, &LIGHTNING)
         } else {
-            0
+            1
         };
 
-        let mut multiplier = if free_spin { self.fs_multiplier } else { 1 };
-        let mut lightning = false;
-        if self.feature == Feature::Lightning && line_total > 0 {
-            let odds = if free_spin { 45 } else { 22 };
-            if rng.chance(odds, 100) {
-                lightning = true;
-                multiplier = multiplier.max(1) * pick_pair(rng, &LIGHTNING);
-            }
-        }
-
         let total_win = (line_total + collect_win) * i64::from(multiplier) + scatter_win;
-        let triggered = scatter_cells.len() >= 3;
 
         SpinResult {
             grid,
             cell_values,
             expanded,
             hits,
+            wheel_triggered: scatter_cells.len() >= 3,
             scatter_cells,
             scatter_win,
             collect_win,
             multiplier,
-            lightning,
             total_win,
-            wheel_triggered: triggered && !free_spin,
-            free_spins_added: if triggered && free_spin { 5 } else { 0 },
         }
     }
 
@@ -215,15 +310,17 @@ impl RoomMath {
         for (index, line) in PAYLINES.iter().enumerate() {
             let symbols: Vec<usize> = (0..REELS).map(|reel| grid[cell(reel, line[reel])]).collect();
 
-            let wild_run = symbols.iter().take_while(|s| **s == self.wild).count();
-            let wild_pay = if wild_run >= 3 { self.pays[self.wild][wild_run - 3] } else { 0 };
+            let wild_run = symbols.iter().take_while(|s| self.is_wild(**s)).count();
+            let (mut symbol, mut count, mut pay) = (symbols[0], wild_run, 0);
+            if wild_run >= 3 {
+                pay = self.pays[symbols[0]][wild_run - 3];
+            }
 
-            let base = symbols.iter().copied().find(|s| *s != self.wild);
-            let (mut symbol, mut count, mut pay) = (self.wild, wild_run, wild_pay);
+            let base = symbols.iter().copied().find(|s| !self.is_wild(*s));
             if let Some(base) = base.filter(|b| *b != self.scatter) {
                 let run = symbols
                     .iter()
-                    .take_while(|s| **s == base || **s == self.wild)
+                    .take_while(|s| **s == base || self.is_wild(**s))
                     .count();
                 if run >= 3 && self.pays[base][run - 3] > pay {
                     symbol = base;
@@ -243,11 +340,6 @@ impl RoomMath {
             }
         }
         hits
-    }
-
-    pub fn spin_wheel(&self, rng: &mut Rng) -> usize {
-        let weights: Vec<u32> = self.wheel.iter().map(|s| s.weight).collect();
-        rng.weighted(&weights)
     }
 }
 
@@ -285,95 +377,64 @@ pub fn win_tier(win: i64, bet: i64) -> u32 {
     }
 }
 
-pub const DAILY_COOLDOWN_SECS: i64 = 4 * 3600;
 pub const REFILL_AMOUNT: i64 = 25_000;
 pub const START_BALANCE: i64 = 50_000;
 
-pub const DAILY_WHEEL: [(i64, u32); 10] = [
-    (2_500, 22),
-    (10_000, 9),
-    (5_000, 18),
-    (25_000, 4),
-    (3_000, 20),
-    (15_000, 7),
-    (4_000, 19),
-    (50_000, 2),
-    (7_500, 12),
-    (100_000, 1),
-];
-
-pub fn daily_scale(level: u32) -> i64 {
-    10 + i64::from(level.saturating_sub(1)) * 2
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{BETS, Prize, max_bet_index};
-    use crate::catalog::room_maths;
+    use super::{BETS, Catch, JACKPOT_BASE, Segment, WHEEL, catch_table, max_bet_index, pick};
+    use crate::catalog::slot_math;
     use crate::rng::Rng;
 
     #[test]
     fn return_to_player_is_in_social_range() {
-        let maths = room_maths();
+        let math = slot_math();
         let bet = BETS[3];
-        let mut failures = Vec::new();
-        for (room, math) in maths.iter().enumerate() {
-            let mut rng = Rng::seeded(42 + room as u64);
-            let spins = 400_000;
-            let mut base_win = 0i64;
-            let mut line_win = 0i64;
-            let mut collect_win = 0i64;
-            let mut scatter_win = 0i64;
-            let mut fs_win = 0i64;
-            let mut wheel_win = 0i64;
-            let mut hits = 0u32;
-            let mut triggers = 0u32;
-            for _ in 0..spins {
-                let r = math.spin(&mut rng, bet, false);
-                base_win += r.total_win;
-                line_win += r.hits.iter().map(|h| h.amount).sum::<i64>();
-                collect_win += r.collect_win;
-                scatter_win += r.scatter_win;
-                if r.total_win > 0 {
-                    hits += 1;
-                }
-                if r.wheel_triggered {
-                    triggers += 1;
-                    match math.wheel[math.spin_wheel(&mut rng)].prize {
-                        Prize::Coins(m) => wheel_win += m * bet,
-                        Prize::Jackpot(j) => wheel_win += super::JACKPOT_BASE[j] * bet,
-                        Prize::FreeSpins(n) => {
-                            let mut left = n;
-                            while left > 0 {
-                                left -= 1;
-                                let f = math.spin(&mut rng, bet, true);
-                                fs_win += f.total_win;
-                                left += f.free_spins_added;
-                            }
-                        }
-                    }
-                }
+        let mut rng = Rng::seeded(42);
+        let spins = 1_000_000;
+        let mut base_win = 0i64;
+        let mut line_win = 0i64;
+        let mut collect_win = 0i64;
+        let mut scatter_win = 0i64;
+        let mut wheel_coins = 0i64;
+        let mut fishing = 0i64;
+        let mut hits = 0u32;
+        let mut triggers = 0u32;
+        for _ in 0..spins {
+            let r = math.spin(&mut rng, bet);
+            base_win += r.total_win;
+            line_win += r.hits.iter().map(|h| h.amount).sum::<i64>();
+            collect_win += r.collect_win;
+            scatter_win += r.scatter_win;
+            if r.total_win > 0 {
+                hits += 1;
             }
-            let staked = bet * spins as i64;
-            let pct = |v: i64| v as f64 * 100.0 / staked as f64;
-            println!(
-                "room {room}: rtp {:.1}% (base {:.1}% = lines {:.1}% + collect {:.1}% + scatter {:.1}%, fs {:.1}%, wheel {:.1}%), hit {:.1}%, trigger 1/{}",
-                pct(base_win + fs_win + wheel_win),
-                pct(base_win),
-                pct(line_win),
-                pct(collect_win),
-                pct(scatter_win),
-                pct(fs_win),
-                pct(wheel_win),
-                hits as f64 * 100.0 / spins as f64,
-                spins / triggers.max(1)
-            );
-            let total = pct(base_win + fs_win + wheel_win);
-            if !(90.0..=98.0).contains(&total) {
-                failures.push(room);
+            if r.wheel_triggered {
+                triggers += 1;
+                match WHEEL[rng.below(WHEEL.len() as u64) as usize] {
+                    Segment::Coins(m) => wheel_coins += m * bet,
+                    Segment::Fishing(fish) => match pick(&mut rng, catch_table(fish)) {
+                        Catch::Multiplier(m) => fishing += m * bet,
+                        Catch::Jackpot(j) => fishing += JACKPOT_BASE[j] * bet,
+                    },
+                }
             }
         }
-        assert!(failures.is_empty(), "rooms out of range: {failures:?}");
+        let staked = bet * spins as i64;
+        let pct = |v: i64| v as f64 * 100.0 / staked as f64;
+        let total = pct(base_win + wheel_coins + fishing);
+        println!(
+            "rtp {total:.1}% (lines {:.1}% + collect {:.1}% + scatter {:.1}% = base {:.1}%, wheel {:.1}%, fishing {:.1}%), hit {:.1}%, trigger 1/{}",
+            pct(line_win),
+            pct(collect_win),
+            pct(scatter_win),
+            pct(base_win),
+            pct(wheel_coins),
+            pct(fishing),
+            hits as f64 * 100.0 / spins as f64,
+            spins / triggers.max(1)
+        );
+        assert!((90.0..=98.0).contains(&total), "rtp {total:.1}% out of range");
         assert_eq!(max_bet_index(1), 3);
     }
 }

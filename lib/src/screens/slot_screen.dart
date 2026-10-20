@@ -5,9 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../bindings/bindings.dart';
+import '../core/atlas.dart';
 import '../core/game_bridge.dart';
 import '../core/lexicon.dart';
 import '../core/numbers.dart';
+import '../slot/fishing_screen.dart';
 import '../slot/overlays.dart';
 import '../slot/reels.dart';
 import '../slot/wheel_dialog.dart';
@@ -15,14 +17,11 @@ import '../ui/dialogs.dart';
 import '../ui/hud.dart';
 import '../ui/kit.dart';
 import '../ui/palette.dart';
-import 'lobby_screen.dart';
 
 const _whiteFill = [Colors.white, Colors.white];
 
 class SlotScreen extends StatefulWidget {
-  const SlotScreen({super.key, required this.roomIndex});
-
-  final int roomIndex;
+  const SlotScreen({super.key});
 
   @override
   State<SlotScreen> createState() => _SlotScreenState();
@@ -31,14 +30,14 @@ class SlotScreen extends StatefulWidget {
 class _SlotScreenState extends State<SlotScreen> with TickerProviderStateMixin {
   final _board = ReelBoardController();
   final _bridge = GameBridge.instance;
-  late final RoomDef _room = _bridge.room(widget.roomIndex)!;
+  late final SlotDef _slot = _bridge.slot;
   late final AnimationController _spinRing = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
 
   StreamSubscription<SpinOutcome>? _line;
   Completer<SpinOutcome>? _pending;
   bool _spinning = false;
   bool _auto = false;
-  bool _resumed = false;
+  bool _inBonus = false;
   int? _shownBalance;
   int _lastWin = 0;
   String _feature = Lex.blank;
@@ -54,33 +53,22 @@ class _SlotScreenState extends State<SlotScreen> with TickerProviderStateMixin {
         pending.complete(outcome);
       }
     });
-    _bridge.addListener(_onState);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _onState());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final state = _bridge.state;
+      if (state != null && (state.wheelPending || state.fishPending >= 0)) {
+        Future<void>.delayed(const Duration(milliseconds: 600), _playBonus);
+      }
+    });
   }
 
   @override
   void dispose() {
-    _bridge.removeListener(_onState);
     _line?.cancel();
     _spinRing.dispose();
     super.dispose();
   }
 
-  void _onState() {
-    final state = _bridge.state;
-    if (_resumed || !mounted || state == null || state.room != widget.roomIndex) {
-      return;
-    }
-    _resumed = true;
-    if (state.wheelPending) {
-      Future<void>.delayed(const Duration(milliseconds: 500), _openWheel);
-    } else if (state.freeSpinsLeft > 0) {
-      _showFlash(Lex.join([state.freeSpinsLeft.toString(), tx(T.freeSpins)]));
-      Future<void>.delayed(const Duration(milliseconds: 1400), _spin);
-    }
-  }
-
-  bool get _inFreeSpins => (_bridge.state?.freeSpinsLeft ?? 0) > 0;
+  Color get _accent => Color(_slot.accent);
 
   void _showFlash(String text) {
     final id = ++_flashId;
@@ -94,15 +82,14 @@ class _SlotScreenState extends State<SlotScreen> with TickerProviderStateMixin {
 
   Future<void> _spin() async {
     final state = _bridge.state;
-    if (_spinning || !mounted || state == null) {
+    if (_spinning || _inBonus || !mounted || state == null) {
       return;
     }
-    if (state.wheelPending) {
-      await _openWheel();
+    if (state.wheelPending || state.fishPending >= 0) {
+      await _playBonus();
       return;
     }
-    final free = state.freeSpinsLeft > 0;
-    if (!free && state.balance < state.bet) {
+    if (state.balance < state.bet) {
       setState(() => _auto = false);
       if (state.refillReady) {
         await showRefill(context);
@@ -115,7 +102,7 @@ class _SlotScreenState extends State<SlotScreen> with TickerProviderStateMixin {
     HapticFeedback.mediumImpact();
     setState(() {
       _spinning = true;
-      _shownBalance = free ? null : state.balance - state.bet;
+      _shownBalance = state.balance - state.bet;
       _lastWin = 0;
       _feature = Lex.blank;
     });
@@ -141,7 +128,7 @@ class _SlotScreenState extends State<SlotScreen> with TickerProviderStateMixin {
       return;
     }
 
-    await _board.land(outcome, turbo: _auto && !free);
+    await _board.land(outcome, turbo: _auto);
     if (!mounted) {
       return;
     }
@@ -156,18 +143,15 @@ class _SlotScreenState extends State<SlotScreen> with TickerProviderStateMixin {
     if (outcome.totalWin > 0) {
       HapticFeedback.mediumImpact();
     }
-    if (outcome.freeSpinsAdded > 0) {
-      _showFlash(tx(T.plus) + Lex.join([outcome.freeSpinsAdded.toString(), tx(T.freeSpins)]));
-    }
 
     if (outcome.tier > 0) {
       await Future<void>.delayed(const Duration(milliseconds: 600));
       if (mounted) {
-        await showBigWin(context, room: _room, label: outcome.tierLabel, amount: outcome.totalWin, tier: outcome.tier);
+        await showBigWin(context, slot: _slot, label: outcome.tierLabel, amount: outcome.totalWin, tier: outcome.tier);
       }
     } else if (outcome.totalWin > 0) {
-      await Future<void>.delayed(Duration(milliseconds: _auto || free ? 1100 : 500));
-    } else if (_auto || free) {
+      await Future<void>.delayed(Duration(milliseconds: _auto ? 1100 : 500));
+    } else if (_auto) {
       await Future<void>.delayed(const Duration(milliseconds: 350));
     }
     if (!mounted) {
@@ -176,21 +160,12 @@ class _SlotScreenState extends State<SlotScreen> with TickerProviderStateMixin {
     if (outcome.levelUp) {
       await showLevelUp(context, reward: outcome.levelReward);
     }
-    if (!mounted) {
-      return;
-    }
-    if (outcome.freeSpinsFinished) {
-      await Future<void>.delayed(const Duration(milliseconds: 400));
-      if (mounted) {
-        await showFreeSpinsDone(context, room: _room, amount: outcome.state.freeSpinsWin);
-      }
-    }
     _finish();
     if (outcome.wheelTriggered && mounted) {
       setState(() => _auto = false);
       _showFlash(tx(T.bonusWheel));
-      await Future<void>.delayed(const Duration(milliseconds: 1300));
-      await _openWheel();
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      await _playBonus();
       return;
     }
     _continue();
@@ -210,25 +185,32 @@ class _SlotScreenState extends State<SlotScreen> with TickerProviderStateMixin {
     if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? false)) {
       return;
     }
-    if (_inFreeSpins || _auto) {
+    if (_auto) {
       Future<void>.delayed(const Duration(milliseconds: 250), _spin);
     }
   }
 
-  Future<void> _openWheel() async {
-    if (!mounted) {
+  Future<void> _playBonus() async {
+    if (!mounted || _inBonus) {
       return;
     }
+    setState(() => _inBonus = true);
     _board.clear();
-    final outcome = await showWheel(context, daily: false, room: _room);
-    if (!mounted || outcome == null) {
-      return;
+    if (_bridge.state?.wheelPending ?? false) {
+      final outcome = await showBonusWheel(context);
+      if (mounted && outcome != null && outcome.fish < 0) {
+        setState(() => _lastWin = outcome.coins);
+      }
     }
-    setState(() {});
-    if (outcome.freeSpins > 0) {
-      _showFlash(outcome.headline);
-      await Future<void>.delayed(const Duration(milliseconds: 1500));
-      _spin();
+    if (mounted && (_bridge.state?.fishPending ?? -1) >= 0) {
+      final caught = await Navigator.of(context).push(fadeRoute<FishOutcome?>(const FishingScreen()));
+      if (mounted && caught != null) {
+        setState(() => _lastWin = caught.coins);
+      }
+    }
+    if (mounted) {
+      setState(() => _inBonus = false);
+      _bridge.publish();
     }
   }
 
@@ -242,30 +224,31 @@ class _SlotScreenState extends State<SlotScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final catalog = _bridge.catalog;
+    final tint = Color(_slot.tint);
     return PopScope(
-      canPop: !_spinning,
+      canPop: false,
       child: Scaffold(
         backgroundColor: frostNight,
         body: Stack(
           fit: StackFit.expand,
           children: [
-            RoomBackdrop(room: _room),
+            AssetArt(A.values[_slot.background.clamp(0, A.values.length - 1)], alignment: Alignment.topCenter),
             DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Color(_room.tint).withValues(alpha: 0.55),
-                    Color(_room.tint).withValues(alpha: 0.05),
-                    Color(_room.tint).withValues(alpha: 0.65),
+                    tint.withValues(alpha: 0.55),
+                    tint.withValues(alpha: 0.05),
+                    tint.withValues(alpha: 0.65),
                     const Color(0xF2020818),
                   ],
                   stops: const [0, 0.32, 0.7, 1],
                 ),
               ),
             ),
-            SnowLayer(count: 45, color: Color.lerp(Colors.white, Color(_room.accent), 0.3)!),
+            SnowLayer(count: 45, color: Color.lerp(Colors.white, _accent, 0.3)!),
             SafeArea(
               child: ListenableBuilder(
                 listenable: _bridge,
@@ -282,29 +265,29 @@ class _SlotScreenState extends State<SlotScreen> with TickerProviderStateMixin {
                           state: state,
                           balance: _shownBalance,
                           leading: RoundIconButton(
-                            icon: Icons.arrow_back_rounded,
+                            icon: Icons.settings_rounded,
                             onTap: () {
                               if (!_spinning) {
                                 setState(() => _auto = false);
-                                Navigator.of(context).maybePop();
+                                showSettings(context);
                               }
                             },
                           ),
                           trailing: RoundIconButton(
                             icon: Icons.info_outline_rounded,
-                            onTap: () => showPaytable(context, _room, state.bet),
+                            onTap: () => showPaytable(context, state.bet),
                           ),
                         ),
                       ),
                       _JackpotStrip(state: state, catalog: catalog),
-                      Expanded(child: _stage(state, catalog)),
-                      _WinBar(state: state, lastWin: _lastWin, feature: _feature, accent: Color(_room.accent)),
+                      Expanded(child: _stage(catalog)),
+                      _WinBar(lastWin: _lastWin, feature: _feature, accent: _accent),
                       _Controls(
                         state: state,
-                        spinning: _spinning,
+                        spinning: _spinning || _inBonus,
                         auto: _auto,
                         ring: _spinRing,
-                        accent: Color(_room.accent),
+                        accent: _accent,
                         onSpin: () {
                           if (_auto) {
                             setState(() => _auto = false);
@@ -340,57 +323,51 @@ class _SlotScreenState extends State<SlotScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _stage(PlayerState state, Catalog catalog) {
+  Widget _stage(Catalog catalog) {
     return LayoutBuilder(
       builder: (context, box) {
         final boardW = math.min(box.maxWidth - 16, (box.maxHeight - 24) * 5 / 3.3);
         final boardH = boardW * 3.3 / 5;
         final above = box.maxHeight - boardH - 8;
-        final mascotH = above + boardH * 0.45;
+        final mascotH = above + boardH * 0.3;
+        final logo = Atlas.of(A.gameName);
         return Stack(
           clipBehavior: Clip.none,
           children: [
             Positioned(
-              right: 0,
-              bottom: 8 + boardH * 0.55,
+              left: -box.maxWidth * 0.04,
+              bottom: 8 + boardH * 0.7,
               height: mascotH,
-              width: box.maxWidth * 0.5,
-              child: IgnorePointer(child: SpriteBox(_room.mascot, alignment: Alignment.bottomRight)),
+              width: box.maxWidth * 0.42,
+              child: IgnorePointer(child: SpriteBox(_slot.leftMascot, alignment: Alignment.bottomLeft)),
             ),
             Positioned(
-              left: 14,
-              top: 4,
-              width: box.maxWidth * 0.55,
-              height: math.max(0, above - 8),
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.topLeft,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    GoldText(_room.title, size: 26),
-                    const SizedBox(height: 4),
-                    HudPill(
-                      height: 30,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.bolt_rounded, color: Color(_room.accent), size: 18),
-                          const SizedBox(width: 4),
-                          Text(_room.featureTitle, style: display(13, color: Color(_room.accent))),
-                        ],
-                      ),
-                    ),
-                  ],
+              right: -box.maxWidth * 0.04,
+              bottom: 8 + boardH * 0.7,
+              height: mascotH,
+              width: box.maxWidth * 0.4,
+              child: IgnorePointer(child: SpriteBox(_slot.rightMascot, alignment: Alignment.bottomRight)),
+            ),
+            if (logo != null)
+              Positioned(
+                left: box.maxWidth * 0.24,
+                right: box.maxWidth * 0.24,
+                top: 0,
+                height: math.max(0, above - 4),
+                child: IgnorePointer(
+                  child: Pulse(
+                    amount: 0.025,
+                    period: const Duration(milliseconds: 2200),
+                    child: RawImage(image: logo, fit: BoxFit.contain),
+                  ),
                 ),
               ),
-            ),
             Positioned(
               left: (box.maxWidth - boardW) / 2,
               bottom: 8,
               width: boardW,
               height: boardH,
-              child: ReelBoard(room: _room, paylines: catalog.paylines, controller: _board),
+              child: ReelBoard(slot: _slot, paylines: catalog.paylines, controller: _board),
             ),
             if (_flash != null)
               Positioned(
@@ -475,55 +452,41 @@ class _JackpotStrip extends StatelessWidget {
 }
 
 class _WinBar extends StatelessWidget {
-  const _WinBar({required this.state, required this.lastWin, required this.feature, required this.accent});
+  const _WinBar({required this.lastWin, required this.feature, required this.accent});
 
-  final PlayerState state;
   final int lastWin;
   final String feature;
   final Color accent;
 
   @override
   Widget build(BuildContext context) {
-    final free = state.freeSpinsLeft > 0 || state.freeSpinsLabel.isNotEmpty;
     return SizedBox(
       height: 52,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14),
         child: Row(
           children: [
-            if (free)
-              HudPill(
-                height: 36,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.auto_awesome_rounded, color: iceBlue, size: 18),
-                    const SizedBox(width: 5),
-                    Text(Lex.join([tx(T.freeSpins), state.freeSpinsLabel]), style: display(14, color: iceWhite)),
-                    if (state.fsMultiplier > 1) ...[
-                      const SizedBox(width: 6),
-                      Text(times(state.fsMultiplier), style: display(15, color: gold)),
-                    ],
-                  ],
-                ),
-              )
-            else
-              Text(tx(T.lines), style: display(13, color: Colors.white60)),
-            const Spacer(),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
-              child: feature.isNotEmpty
-                  ? Padding(
-                      key: ValueKey<String>(feature),
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Pulse(child: Text(feature, style: display(14, color: accent))),
-                    )
-                  : const SizedBox.shrink(),
+            Text(tx(T.lines), style: display(13, color: Colors.white60)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: feature.isNotEmpty
+                    ? Align(
+                        key: ValueKey<String>(feature),
+                        alignment: Alignment.centerRight,
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: FittedBox(child: Pulse(child: Text(feature, style: display(14, color: accent)))),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
             ),
             Text(tx(T.win), style: display(16, color: Colors.white70)),
             const SizedBox(width: 6),
             TickingNumber(
-              value: free && state.freeSpinsWin > 0 ? state.freeSpinsWin : lastWin,
+              value: lastWin,
               duration: const Duration(milliseconds: 900),
               builder: (shown) => GoldText(grouped(shown), size: 26),
             ),
@@ -557,8 +520,7 @@ class _Controls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final free = state.freeSpinsLeft > 0;
-    final betLocked = spinning || free || auto;
+    final betLocked = spinning || auto;
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
       decoration: BoxDecoration(
@@ -602,15 +564,7 @@ class _Controls extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          _SpinButton(
-            spinning: spinning,
-            auto: auto,
-            free: free,
-            freeLeft: state.freeSpinsLeft,
-            ring: ring,
-            accent: accent,
-            onTap: onSpin,
-          ),
+          _SpinButton(spinning: spinning, auto: auto, ring: ring, accent: accent, onTap: onSpin),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -624,7 +578,7 @@ class _Controls extends StatelessWidget {
                   colors: auto
                       ? const [Color(0xFFFF9D9D), ruby, rubyDeep]
                       : const [Color(0xFFB08CFF), violet, violetDeep],
-                  onTap: free ? null : onAuto,
+                  onTap: onAuto,
                   child: FittedBox(
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -669,8 +623,6 @@ class _SpinButton extends StatelessWidget {
   const _SpinButton({
     required this.spinning,
     required this.auto,
-    required this.free,
-    required this.freeLeft,
     required this.ring,
     required this.accent,
     required this.onTap,
@@ -678,8 +630,6 @@ class _SpinButton extends StatelessWidget {
 
   final bool spinning;
   final bool auto;
-  final bool free;
-  final int freeLeft;
   final Animation<double> ring;
   final Color accent;
   final VoidCallback onTap;
@@ -687,9 +637,7 @@ class _SpinButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const size = 96.0;
-    final colors = free
-        ? const [Color(0xFFB8F4FF), Color(0xFF2EB8FF), Color(0xFF0A4FB0)]
-        : const [Color(0xFF9DFFB5), emerald, emeraldDeep];
+    const colors = [Color(0xFF9DFFB5), emerald, emeraldDeep];
     final enabled = !spinning || auto;
     return Pulse(
       active: !spinning && !auto,
@@ -720,24 +668,16 @@ class _SpinButton extends StatelessWidget {
               Container(
                 width: size - 12,
                 height: size - 12,
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: RadialGradient(colors: colors, center: const Alignment(-0.3, -0.4), radius: 0.95),
+                  gradient: RadialGradient(colors: colors, center: Alignment(-0.3, -0.4), radius: 0.95),
                 ),
                 child: Center(
-                  child: free
-                      ? Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            GoldText(freeLeft.toString(), size: 30, colors: _whiteFill, stroke: const Color(0xFF06204A)),
-                            Text(tx(T.spins), style: display(12)),
-                          ],
-                        )
-                      : auto
-                          ? const Icon(Icons.stop_rounded, color: Colors.white, size: 46)
-                          : spinning
-                              ? const Icon(Icons.hourglass_top_rounded, color: Colors.white70, size: 38)
-                              : GoldText(tx(T.spin), size: 26, colors: _whiteFill, stroke: emeraldDeep),
+                  child: auto
+                      ? const Icon(Icons.stop_rounded, color: Colors.white, size: 46)
+                      : spinning
+                          ? const Icon(Icons.hourglass_top_rounded, color: Colors.white70, size: 38)
+                          : GoldText(tx(T.spin), size: 26, colors: _whiteFill, stroke: emeraldDeep),
                 ),
               ),
             ],

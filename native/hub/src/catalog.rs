@@ -1,9 +1,11 @@
 use crate::lexicon::{Ast, Txt, join, text};
 use crate::math::{
-    DAILY_WHEEL, Feature, KIND_REGULAR, KIND_SCATTER, KIND_WILD, PAYLINES, Prize, RoomMath,
-    WheelSeg,
+    Catch, FISH_KINDS, Fish, KIND_REGULAR, KIND_SCATTER, KIND_WILD, PAYLINES, Segment, SlotMath,
+    WHEEL, WildPower, catch_table,
 };
-use crate::signals::{Catalog, RoomDef, Sprite, SymbolDef, WheelDef, WheelRim};
+use crate::signals::{
+    Catalog, FeatureDef, FishDef, SlotDef, Sprite, SymbolDef, WheelDef, WheelRim,
+};
 use obfstr::obfstring;
 
 fn sprite(asset: Ast, x: f32, y: f32, w: f32, h: f32) -> Sprite {
@@ -22,6 +24,7 @@ struct Sym {
     weight: u32,
     pays: [i64; 3],
     glow: u32,
+    power: Option<WildPower>,
 }
 
 fn sym(sprite: Sprite, weight: u32, pays: [i64; 3], glow: u32) -> Sym {
@@ -31,16 +34,18 @@ fn sym(sprite: Sprite, weight: u32, pays: [i64; 3], glow: u32) -> Sym {
         weight,
         pays,
         glow,
+        power: None,
     }
 }
 
-fn wild(sprite: Sprite, weight: u32) -> Sym {
+fn wild(sprite: Sprite, weight: u32, power: WildPower, glow: u32) -> Sym {
     Sym {
         sprite,
         kind: KIND_WILD,
         weight,
         pays: [100, 400, 1_500],
-        glow: 0xFFFFE27A,
+        glow,
+        power: Some(power),
     }
 }
 
@@ -51,6 +56,7 @@ fn scatter(weight: u32) -> Sym {
         weight,
         pays: [0, 0, 0],
         glow: 0xFFFF7A2E,
+        power: None,
     }
 }
 
@@ -79,6 +85,7 @@ fn gem(index: usize) -> Sprite {
     sprite(Ast::Gems, r[0], r[1], r[2], r[3])
 }
 
+/// 0 red, 1 blue, 2 gold.
 fn fish(index: usize) -> Sprite {
     const RECTS: [[f32; 4]; 3] = [
         [15.0, 17.0, 141.0, 176.0],
@@ -132,202 +139,64 @@ fn magic(index: usize) -> Sprite {
     sprite(Ast::Magic, r[0], r[1], r[2], r[3])
 }
 
-const LOW: [[i64; 3]; 5] = [[5, 15, 50], [5, 15, 60], [10, 25, 75], [10, 30, 100], [15, 40, 125]];
-
-struct Room {
-    title: String,
-    tagline: String,
-    feature_title: String,
-    feature_text: String,
-    background: Ast,
-    tint: u32,
-    accent: u32,
-    frame: u32,
-    mascot: Sprite,
-    card_art: Sprite,
-    unlock_level: u32,
-    feature: Feature,
-    fs_multiplier: u32,
-    /// Percentage applied to every line pay of the room.
-    pay_scale: i64,
-    symbols: Vec<Sym>,
-    collectors: Vec<usize>,
-    wheel_asset: Ast,
-    wheel_offset: f32,
-    wheel: Vec<WheelSeg>,
+fn fisherman_bust() -> Sprite {
+    sprite(Ast::ManWinter, 37.0, 22.0, 230.0, 230.0)
 }
 
-fn scaled(pays: [i64; 3], scale: i64) -> [i64; 3] {
-    pays.map(|p| (p * scale + 50) / 100)
+fn joker_head() -> Sprite {
+    sprite(Ast::HeadJoker, 33.0, 35.0, 233.0, 227.0)
 }
 
-fn seg(prize: Prize, weight: u32) -> WheelSeg {
-    WheelSeg { prize, weight }
+fn zeus_bust() -> Sprite {
+    sprite(Ast::Zeus, 45.0, 30.0, 230.0, 230.0)
 }
 
-fn ten_segment_wheel() -> Vec<WheelSeg> {
+/// Percentage applied to every line pay.
+const PAY_SCALE: i64 = 79;
+
+fn symbols() -> Vec<Sym> {
     vec![
-        seg(Prize::Coins(10), 36),
-        seg(Prize::FreeSpins(8), 26),
-        seg(Prize::Jackpot(0), 22),
-        seg(Prize::Coins(20), 26),
-        seg(Prize::FreeSpins(10), 18),
-        seg(Prize::Jackpot(1), 10),
-        seg(Prize::Coins(40), 14),
-        seg(Prize::FreeSpins(15), 10),
-        seg(Prize::Jackpot(2), 3),
-        seg(Prize::Jackpot(3), 1),
+        sym(gem(2), 20, [5, 15, 50], 0xFF3DFF8F),
+        sym(candy(0), 20, [5, 15, 60], 0xFFFF4D6B),
+        sym(fruit2(0), 19, [10, 25, 75], 0xFFFFE04D),
+        sym(fruit(0), 19, [10, 30, 100], 0xFFFF3D5A),
+        sym(gem(0), 18, [15, 40, 125], 0xFF4DA6FF),
+        sym(sprite(Ast::Lollipop, 15.0, 14.0, 145.0, 137.0), 13, [20, 60, 200], 0xFFFF6BC4),
+        sym(sprite(Ast::Bells, 11.0, 8.0, 75.0, 83.0), 12, [25, 75, 250], 0xFFFFD24D),
+        sym(sprite(Ast::Bar, 3.0, 26.0, 95.0, 49.0), 10, [30, 100, 300], 0xFFFF3D3D),
+        sym(magic(1), 8, [50, 150, 500], 0xFFFFE07A),
+        sym(fish(1), 10, [15, 50, 150], 0xFF4DC3FF),
+        sym(fish(2), 8, [25, 75, 250], 0xFFFFB04D),
+        sym(fish(0), 6, [40, 120, 400], 0xFFFF6B4D),
+        wild(fisherman_bust(), 3, WildPower::Collect, 0xFF9FE6FF),
+        wild(joker_head(), 3, WildPower::Expand, 0xFFFFC640),
+        wild(zeus_bust(), 3, WildPower::Lightning, 0xFFFFE27A),
+        scatter(6),
     ]
 }
 
-fn rooms() -> Vec<Room> {
-    vec![
-        Room {
-            title: obfstring!("FROZEN LAKE"),
-            tagline: obfstring!("Ice fishing for legendary catches"),
-            feature_title: obfstring!("FISHERMAN COLLECT"),
-            feature_text: obfstring!(
-                "Every fish carries a coin value. When the Fisherman WILD lands, he collects all fish on the screen, up to 3 times."
-            ),
-            background: Ast::Bg1,
-            tint: 0xFF0B2A5C,
-            accent: 0xFF7FE3FF,
-            frame: 0xFF9FD8FF,
-            mascot: sprite(Ast::ManWinterRod, 1.0, 28.0, 300.0, 646.0),
-            card_art: sprite(Ast::ManWinterRod2, 1.0, 30.0, 225.0, 649.0),
-            unlock_level: 1,
-            feature: Feature::FishCollect,
-            fs_multiplier: 2,
-            pay_scale: 122,
-            symbols: vec![
-                sym(gem(2), 22, LOW[0], 0xFF3DFF8F),
-                sym(gem(4), 21, LOW[1], 0xFFC46BFF),
-                sym(gem(5), 20, LOW[2], 0xFFFFB524),
-                sym(gem(1), 19, LOW[3], 0xFFFF4D5E),
-                sym(gem(0), 18, LOW[4], 0xFF4DA6FF),
-                sym(fish(1), 12, [20, 60, 200], 0xFF4DC3FF),
-                sym(fish(0), 11, [25, 75, 250], 0xFFFF6B4D),
-                sym(sprite(Ast::Rod, 5.0, 280.0, 110.0, 200.0), 9, [30, 100, 300], 0xFF9FD8FF),
-                sym(fish(2), 7, [50, 150, 500], 0xFFFFD84D),
-                wild(sprite(Ast::ManWinter, 37.0, 22.0, 230.0, 230.0), 6),
-                scatter(5),
-            ],
-            collectors: vec![5, 6, 8],
-            wheel_asset: Ast::WheelIce,
-            wheel_offset: -15.0,
-            wheel: vec![
-                seg(Prize::Coins(10), 34),
-                seg(Prize::FreeSpins(8), 24),
-                seg(Prize::Jackpot(0), 20),
-                seg(Prize::Coins(15), 28),
-                seg(Prize::FreeSpins(10), 18),
-                seg(Prize::Jackpot(1), 10),
-                seg(Prize::Coins(25), 20),
-                seg(Prize::FreeSpins(12), 12),
-                seg(Prize::Coins(40), 12),
-                seg(Prize::Jackpot(2), 3),
-                seg(Prize::FreeSpins(15), 8),
-                seg(Prize::Jackpot(3), 1),
-            ],
-        },
-        Room {
-            title: obfstring!("JOKER CIRCUS"),
-            tagline: obfstring!("Classic fruits under the big top"),
-            feature_title: obfstring!("EXPANDING JOKER"),
-            feature_text: obfstring!(
-                "A Joker WILD landing on reels 2, 3 or 4 expands to cover the whole reel before wins are paid."
-            ),
-            background: Ast::Bg2,
-            tint: 0xFF4A0A12,
-            accent: 0xFFFFC640,
-            frame: 0xFFFFB13B,
-            mascot: sprite(Ast::Joker, 14.0, 14.0, 279.0, 727.0),
-            card_art: sprite(Ast::Joker, 14.0, 14.0, 279.0, 727.0),
-            unlock_level: 2,
-            feature: Feature::ExpandingWild,
-            fs_multiplier: 2,
-            pay_scale: 146,
-            symbols: vec![
-                sym(fruit(3), 22, LOW[0], 0xFFB04DFF),
-                sym(fruit2(2), 21, LOW[1], 0xFFFF4D4D),
-                sym(fruit2(1), 20, LOW[2], 0xFFFF9A24),
-                sym(fruit2(0), 19, LOW[3], 0xFFFFE04D),
-                sym(fruit(1), 18, LOW[4], 0xFF9B4DFF),
-                sym(fruit(0), 12, [20, 60, 200], 0xFFFF3D5A),
-                sym(fruit(2), 11, [25, 75, 250], 0xFF4DFF7A),
-                sym(sprite(Ast::Bells, 11.0, 8.0, 75.0, 83.0), 9, [30, 100, 300], 0xFFFFD24D),
-                sym(sprite(Ast::Bar, 3.0, 26.0, 95.0, 49.0), 7, [50, 150, 500], 0xFFFF3D3D),
-                wild(sprite(Ast::HeadJoker, 33.0, 35.0, 233.0, 227.0), 3),
-                scatter(5),
-            ],
-            collectors: vec![],
-            wheel_asset: Ast::WheelFire,
-            wheel_offset: 0.0,
-            wheel: ten_segment_wheel(),
-        },
-        Room {
-            title: obfstring!("SWEET OLYMPUS"),
-            tagline: obfstring!("Candy treasures of the thunder god"),
-            feature_title: obfstring!("ZEUS LIGHTNING"),
-            feature_text: obfstring!(
-                "Zeus may strike any winning spin with a x2, x3, x5 or x10 multiplier. During free spins he strikes twice as often."
-            ),
-            background: Ast::Bg1,
-            tint: 0xFF2A1458,
-            accent: 0xFFFFD86B,
-            frame: 0xFFE6C36A,
-            mascot: sprite(Ast::Zeus, 2.0, 41.0, 315.0, 706.0),
-            card_art: sprite(Ast::Zeus, 2.0, 41.0, 315.0, 706.0),
-            unlock_level: 4,
-            feature: Feature::Lightning,
-            fs_multiplier: 1,
-            pay_scale: 175,
-            symbols: vec![
-                sym(candy(3), 21, LOW[0], 0xFF4DA6FF),
-                sym(candy(2), 20, LOW[1], 0xFF4DFF7A),
-                sym(candy(1), 19, LOW[2], 0xFFC46BFF),
-                sym(candy(0), 18, LOW[3], 0xFFFF4D6B),
-                sym(sprite(Ast::Lollipop, 15.0, 14.0, 145.0, 137.0), 17, LOW[4], 0xFFFF6BC4),
-                sym(magic(2), 12, [15, 50, 150], 0xFFFFC24D),
-                sym(magic(3), 11, [20, 60, 200], 0xFFFF6B4D),
-                sym(magic(0), 10, [25, 75, 250], 0xFFFFD84D),
-                sym(magic(1), 9, [30, 100, 300], 0xFFFFE07A),
-                sym(gem(3), 7, [50, 150, 500], 0xFF6BC4FF),
-                wild(sprite(Ast::Zeus, 45.0, 30.0, 230.0, 230.0), 5),
-                scatter(5),
-            ],
-            collectors: vec![],
-            wheel_asset: Ast::WheelZeus,
-            wheel_offset: 0.0,
-            wheel: ten_segment_wheel(),
-        },
-    ]
+const COLLECTORS: [usize; 3] = [9, 10, 11];
+
+fn scaled(pays: [i64; 3]) -> [i64; 3] {
+    pays.map(|p| (p * PAY_SCALE + 50) / 100)
 }
 
-pub fn room_maths() -> Vec<RoomMath> {
-    rooms()
-        .into_iter()
-        .map(|room| {
-            let wild = room.symbols.iter().position(|s| s.kind == KIND_WILD).unwrap_or(0);
-            let scatter = room
-                .symbols
-                .iter()
-                .position(|s| s.kind == KIND_SCATTER)
-                .unwrap_or(0);
-            RoomMath {
-                weights: room.symbols.iter().map(|s| s.weight).collect(),
-                pays: room.symbols.iter().map(|s| scaled(s.pays, room.pay_scale)).collect(),
-                kinds: room.symbols.iter().map(|s| s.kind).collect(),
-                wild,
-                scatter,
-                feature: room.feature,
-                collectors: room.collectors,
-                fs_multiplier: room.fs_multiplier,
-                wheel: room.wheel,
-                unlock_level: room.unlock_level,
-            }
-        })
-        .collect()
+pub fn slot_math() -> SlotMath {
+    let symbols = symbols();
+    SlotMath {
+        weights: symbols.iter().map(|s| s.weight).collect(),
+        pays: symbols.iter().map(|s| scaled(s.pays)).collect(),
+        wilds: symbols
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| s.power.map(|p| (i, p)))
+            .collect(),
+        scatter: symbols
+            .iter()
+            .position(|s| s.kind == KIND_SCATTER)
+            .unwrap_or(0),
+        collectors: COLLECTORS.to_vec(),
+    }
 }
 
 pub fn jackpot_name(index: usize) -> String {
@@ -336,6 +205,30 @@ pub fn jackpot_name(index: usize) -> String {
         1 => obfstring!("MINOR"),
         2 => obfstring!("MAJOR"),
         _ => obfstring!("GRAND"),
+    }
+}
+
+pub fn fish_name(fish: Fish) -> String {
+    match fish {
+        Fish::Blue => obfstring!("LIL' BLUES"),
+        Fish::Orange => obfstring!("BIG ORANGES"),
+        Fish::Red => obfstring!("HUGE REDS"),
+    }
+}
+
+pub fn fish_color(fish: Fish) -> u32 {
+    match fish {
+        Fish::Blue => 0xFF2F7DE1,
+        Fish::Orange => 0xFFF08A1C,
+        Fish::Red => 0xFFD9262B,
+    }
+}
+
+fn fish_sprite(fish: Fish) -> Sprite {
+    match fish {
+        Fish::Blue => self::fish(1),
+        Fish::Orange => self::fish(2),
+        Fish::Red => self::fish(0),
     }
 }
 
@@ -357,121 +250,155 @@ pub fn short_amount(value: i64) -> String {
     }
 }
 
-pub fn prize_label(prize: Prize) -> String {
-    match prize {
-        Prize::Coins(m) => format!("{}{m}", text(Txt::Times)),
-        Prize::FreeSpins(n) => join(&[n.to_string(), text(Txt::Spins)]),
-        Prize::Jackpot(j) => jackpot_name(j),
+pub fn times(value: i64) -> String {
+    format!("{}{value}", text(Txt::Times))
+}
+
+pub fn catch_label(catch: Catch) -> String {
+    match catch {
+        Catch::Multiplier(m) => times(m),
+        Catch::Jackpot(j) => jackpot_name(j),
     }
 }
 
-fn prize_kind(prize: Prize) -> u32 {
-    match prize {
-        Prize::Coins(_) => 0,
-        Prize::FreeSpins(_) => 1,
-        Prize::Jackpot(j) => 2 + j as u32,
+/// Short prize range for a fish pool, e.g. `x10 - x50 + MINI`.
+fn prize_range(fish: Fish) -> String {
+    let table = catch_table(fish);
+    let multipliers: Vec<i64> = table
+        .iter()
+        .filter_map(|(c, _)| match c {
+            Catch::Multiplier(m) => Some(*m),
+            Catch::Jackpot(_) => None,
+        })
+        .collect();
+    let low = multipliers.iter().min().copied().unwrap_or(0);
+    let high = multipliers.iter().max().copied().unwrap_or(0);
+    let mut parts = vec![times(low), obfstring!("-"), times(high)];
+    for (c, _) in table {
+        if let Catch::Jackpot(j) = c {
+            parts.push(text(Txt::Plus));
+            parts.push(jackpot_name(*j));
+        }
     }
+    join(&parts)
 }
 
-fn prize_color(prize: Prize) -> u32 {
-    match prize {
-        Prize::Coins(_) => 0xFFFFE27A,
-        Prize::FreeSpins(_) => 0xFF8CF7FF,
-        Prize::Jackpot(0) => 0xFF5DFF8A,
-        Prize::Jackpot(1) => 0xFF6BB8FF,
-        Prize::Jackpot(2) => 0xFFD48CFF,
-        Prize::Jackpot(_) => 0xFFFF6B5A,
-    }
-}
-
-fn wheel_rim(asset: Ast) -> WheelRim {
-    let (hub_x, hub_y, disc, pointer_half, pointer_top, pointer_tip) = match asset {
-        Ast::WheelIce => (0.5, 0.505, 0.35, 0.098, 0.458, 0.276),
-        Ast::WheelFire => (0.5, 0.505, 0.336, 0.084, 0.462, 0.311),
-        Ast::WheelZeus => (0.502, 0.507, 0.326, 0.076, 0.438, 0.27),
-        _ => (0.5, 0.505, 0.353, 0.076, 0.449, 0.328),
-    };
+fn wheel_rim() -> WheelRim {
     WheelRim {
-        hub_x,
-        hub_y,
-        disc,
-        pointer_half,
-        pointer_top,
-        pointer_tip,
+        hub_x: 0.5,
+        hub_y: 0.505,
+        disc: 0.35,
+        pointer_half: 0.098,
+        pointer_top: 0.458,
+        pointer_tip: 0.276,
     }
 }
 
-pub fn daily_wheel() -> WheelDef {
+fn wheel_def() -> WheelDef {
     WheelDef {
-        asset: Ast::WheelSweet.id(),
-        rim: wheel_rim(Ast::WheelSweet),
-        offset_deg: 0.0,
-        labels: DAILY_WHEEL.iter().map(|(v, _)| short_amount(*v)).collect(),
-        colors: DAILY_WHEEL
+        asset: Ast::WheelIce.id(),
+        rim: wheel_rim(),
+        hub_label: text(Txt::IceFishing),
+        labels: WHEEL
             .iter()
-            .map(|(v, _)| if *v >= 25_000 { 0xFFFFF27A } else { 0xFFFFFFFF })
+            .map(|s| match s {
+                Segment::Coins(m) => m.to_string(),
+                Segment::Fishing(f) => fish_name(*f),
+            })
             .collect(),
-        kinds: DAILY_WHEEL.iter().map(|_| 0).collect(),
+        fish: WHEEL
+            .iter()
+            .map(|s| match s {
+                Segment::Coins(_) => -1,
+                Segment::Fishing(f) => f.index() as i32,
+            })
+            .collect(),
+        light: 0xFFE9F3FB,
+        dark: 0xFF5D7F9E,
     }
+}
+
+fn features() -> Vec<FeatureDef> {
+    vec![
+        FeatureDef {
+            title: obfstring!("FISHERMAN WILD"),
+            text: obfstring!(
+                "Every fish carries a coin value. The Fisherman collects all fish on screen, once for each Fisherman, up to 3 times."
+            ),
+            sprite: fisherman_bust(),
+            color: 0xFF7FE3FF,
+        },
+        FeatureDef {
+            title: obfstring!("JOKER WILD"),
+            text: obfstring!("On reels 2, 3 and 4 the Joker expands to cover the whole reel."),
+            sprite: joker_head(),
+            color: 0xFFFFC640,
+        },
+        FeatureDef {
+            title: obfstring!("ZEUS WILD"),
+            text: obfstring!("Zeus strikes every winning spin he lands on with a x2, x3, x5 or x10 multiplier."),
+            sprite: zeus_bust(),
+            color: 0xFFFFE27A,
+        },
+    ]
 }
 
 pub fn catalog() -> Catalog {
-    let room_defs = rooms()
-        .into_iter()
-        .map(|room| {
-            let lock_label = join(&[text(Txt::Lvl), room.unlock_level.to_string()]);
-            RoomDef {
-                title: room.title,
-                tagline: room.tagline,
-                feature_title: room.feature_title,
-                feature_text: room.feature_text,
-                lock_label,
-                background: room.background.id(),
-                tint: room.tint,
-                accent: room.accent,
-                frame: room.frame,
-                mascot: room.mascot,
-                card_art: room.card_art,
-                unlock_level: room.unlock_level,
-                symbols: room
-                    .symbols
-                    .iter()
-                    .map(|s| SymbolDef {
-                        sprite: s.sprite.clone(),
-                        kind: s.kind,
-                        pays: scaled(s.pays, room.pay_scale).to_vec(),
-                        glow: s.glow,
-                        badge: match s.kind {
-                            KIND_WILD => text(Txt::Wild),
-                            _ => String::new(),
-                        },
-                    })
-                    .collect(),
-                wheel: WheelDef {
-                    asset: room.wheel_asset.id(),
-                    rim: wheel_rim(room.wheel_asset),
-                    offset_deg: room.wheel_offset,
-                    labels: room.wheel.iter().map(|s| prize_label(s.prize)).collect(),
-                    colors: room.wheel.iter().map(|s| prize_color(s.prize)).collect(),
-                    kinds: room.wheel.iter().map(|s| prize_kind(s.prize)).collect(),
-                },
-            }
+    let symbols = symbols()
+        .iter()
+        .map(|s| SymbolDef {
+            sprite: s.sprite.clone(),
+            kind: s.kind,
+            pays: scaled(s.pays).to_vec(),
+            glow: s.glow,
+            badge: match s.kind {
+                KIND_WILD => text(Txt::Wild),
+                _ => String::new(),
+            },
         })
         .collect();
 
     Catalog {
-        rooms: room_defs,
+        slot: SlotDef {
+            title: text(Txt::AppTitle),
+            background: Ast::Bg1.id(),
+            fishing_background: Ast::Bg1.id(),
+            tint: 0xFF0B2A5C,
+            accent: 0xFF7FE3FF,
+            frame: 0xFF9FD8FF,
+            left_mascot: sprite(Ast::Zeus, 2.0, 41.0, 315.0, 706.0),
+            right_mascot: sprite(Ast::Joker, 14.0, 14.0, 279.0, 727.0),
+            fisherman: sprite(Ast::ManWinterRod, 1.0, 28.0, 300.0, 646.0),
+            angler: sprite(Ast::ManWinterRod2, 1.0, 30.0, 225.0, 649.0),
+            rod: sprite(Ast::Rod, 5.0, 8.0, 152.0, 712.0),
+            decor_wheels: vec![
+                Ast::WheelZeus.id(),
+                Ast::WheelFire.id(),
+                Ast::WheelSweet.id(),
+            ],
+            symbols,
+            features: features(),
+        },
         paylines: PAYLINES.iter().flatten().map(|r| *r as u32).collect(),
-        daily_wheel: daily_wheel(),
+        wheel: wheel_def(),
+        fish: FISH_KINDS
+            .iter()
+            .map(|f| FishDef {
+                name: fish_name(*f),
+                sprite: fish_sprite(*f),
+                color: fish_color(*f),
+                prizes: prize_range(*f),
+            })
+            .collect(),
         jackpot_badges: (1..5).map(badge).collect(),
         jackpot_colors: vec![0xFF3DDC6B, 0xFF3D8BFF, 0xFFA64DFF, 0xFFFF3D3D],
         jackpot_names: (0..4).map(jackpot_name).collect(),
         info_lines: vec![
-            obfstring!("WILD substitutes for every symbol except SCATTER."),
-            obfstring!("3 or more SCATTERS anywhere spin the Bonus Wheel: coins, free spins or a jackpot."),
-            obfstring!("3 SCATTERS during free spins award 5 more free spins."),
+            obfstring!("WILDS substitute for every symbol except SCATTER and never land on reel 1."),
+            obfstring!("3 or more SCATTERS anywhere spin the Ice Fishing wheel. Numbers pay that many total bets."),
+            obfstring!("Fish segments start the fishing bonus: reel in a Lil' Blue, Big Orange or Huge Red for a multiplier or a jackpot."),
             obfstring!("Wins pay left to right on 20 lines. Values shown are per line at the current bet."),
-            obfstring!("Jackpots grow with every spin in the realm."),
+            obfstring!("Jackpots grow with every spin."),
         ],
     }
 }

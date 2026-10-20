@@ -7,11 +7,6 @@ pub struct BootRequest {
 }
 
 #[derive(Deserialize, DartSignal)]
-pub struct EnterRoom {
-    pub room: i32,
-}
-
-#[derive(Deserialize, DartSignal)]
 pub struct ChangeBet {
     pub step: i32,
 }
@@ -23,7 +18,12 @@ pub struct SpinRequest {
 
 #[derive(Deserialize, DartSignal)]
 pub struct WheelSpinRequest {
-    pub daily: bool,
+    pub confirm: bool,
+}
+
+#[derive(Deserialize, DartSignal)]
+pub struct FishRequest {
+    pub confirm: bool,
 }
 
 #[derive(Deserialize, DartSignal)]
@@ -70,38 +70,57 @@ pub struct WheelRim {
 }
 
 #[derive(Clone, Serialize, SignalPiece)]
+pub struct FishDef {
+    pub name: String,
+    pub sprite: Sprite,
+    pub color: u32,
+    pub prizes: String,
+}
+
+/// `fish` holds -1 for a coin segment or the index into `Catalog.fish`.
+#[derive(Clone, Serialize, SignalPiece)]
 pub struct WheelDef {
     pub asset: u32,
     pub rim: WheelRim,
-    pub offset_deg: f32,
+    pub hub_label: String,
     pub labels: Vec<String>,
-    pub colors: Vec<u32>,
-    pub kinds: Vec<u32>,
+    pub fish: Vec<i32>,
+    pub light: u32,
+    pub dark: u32,
 }
 
 #[derive(Clone, Serialize, SignalPiece)]
-pub struct RoomDef {
+pub struct FeatureDef {
     pub title: String,
-    pub tagline: String,
-    pub feature_title: String,
-    pub feature_text: String,
-    pub lock_label: String,
+    pub text: String,
+    pub sprite: Sprite,
+    pub color: u32,
+}
+
+#[derive(Clone, Serialize, SignalPiece)]
+pub struct SlotDef {
+    pub title: String,
     pub background: u32,
+    pub fishing_background: u32,
     pub tint: u32,
     pub accent: u32,
     pub frame: u32,
-    pub mascot: Sprite,
-    pub card_art: Sprite,
-    pub unlock_level: u32,
+    pub left_mascot: Sprite,
+    pub right_mascot: Sprite,
+    pub fisherman: Sprite,
+    pub angler: Sprite,
+    pub rod: Sprite,
+    pub decor_wheels: Vec<u32>,
     pub symbols: Vec<SymbolDef>,
-    pub wheel: WheelDef,
+    pub features: Vec<FeatureDef>,
 }
 
 #[derive(Serialize, RustSignal)]
 pub struct Catalog {
-    pub rooms: Vec<RoomDef>,
+    pub slot: SlotDef,
     pub paylines: Vec<u32>,
-    pub daily_wheel: WheelDef,
+    pub wheel: WheelDef,
+    pub fish: Vec<FishDef>,
     pub jackpot_badges: Vec<Sprite>,
     pub jackpot_colors: Vec<u32>,
     pub jackpot_names: Vec<String>,
@@ -119,15 +138,8 @@ pub struct PlayerState {
     pub xp: i64,
     pub xp_next: i64,
     pub level_label: String,
-    pub room: i32,
-    pub free_spins_left: u32,
-    pub free_spins_total: u32,
-    pub free_spins_win: i64,
-    pub free_spins_label: String,
-    pub fs_multiplier: u32,
     pub wheel_pending: bool,
-    pub daily_ready: bool,
-    pub daily_label: String,
+    pub fish_pending: i32,
     pub refill_ready: bool,
     pub refill_amount: i64,
     pub jackpots: Vec<i64>,
@@ -165,8 +177,6 @@ pub struct SpinOutcome {
     pub tier: u32,
     pub tier_label: String,
     pub wheel_triggered: bool,
-    pub free_spins_added: u32,
-    pub free_spins_finished: bool,
     pub level_up: bool,
     pub level_reward: i64,
     pub state: PlayerState,
@@ -174,11 +184,21 @@ pub struct SpinOutcome {
 
 #[derive(Serialize, RustSignal)]
 pub struct WheelOutcome {
-    pub daily: bool,
     pub segment: u32,
     pub coins: i64,
-    pub free_spins: u32,
+    pub fish: i32,
+    pub headline: String,
+    pub state: PlayerState,
+}
+
+/// `jackpot` holds -1 for a multiplier catch.
+#[derive(Serialize, RustSignal)]
+pub struct FishOutcome {
+    pub fish: i32,
+    pub multiplier: i64,
     pub jackpot: i32,
+    pub coins: i64,
+    pub plate: String,
     pub headline: String,
     pub state: PlayerState,
 }

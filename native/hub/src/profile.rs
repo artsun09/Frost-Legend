@@ -1,7 +1,8 @@
 use crate::math::START_BALANCE;
 
-const MAGIC: u32 = 0x464C_0002;
-pub const ROOM_COUNT: usize = 3;
+const MAGIC: u32 = 0x464C_0003;
+/// Multi-room layout; only balance, bet and level progress carry over.
+const MAGIC_ROOMS: u32 = 0x464C_0002;
 
 #[derive(Clone)]
 pub struct Profile {
@@ -9,13 +10,12 @@ pub struct Profile {
     pub bet_index: u32,
     pub level: u32,
     pub xp: i64,
-    pub daily_last: i64,
-    pub pools: [[i64; 4]; ROOM_COUNT],
-    pub fs_room: i32,
-    pub fs_left: u32,
-    pub fs_total: u32,
-    pub fs_win: i64,
-    pub wheel_room: i32,
+    pub pools: [i64; 4],
+    pub wheel_pending: bool,
+    /// Fish pool waiting to be reeled in, or -1.
+    pub fish_pending: i32,
+    /// Bet that triggered the pending bonus, so prizes match the trigger.
+    pub bonus_bet: i64,
     pub spins: i64,
     pub biggest_win: i64,
 }
@@ -27,13 +27,10 @@ impl Default for Profile {
             bet_index: 2,
             level: 1,
             xp: 0,
-            daily_last: 0,
-            pools: [[0; 4]; ROOM_COUNT],
-            fs_room: -1,
-            fs_left: 0,
-            fs_total: 0,
-            fs_win: 0,
-            wheel_room: -1,
+            pools: [0; 4],
+            wheel_pending: false,
+            fish_pending: -1,
+            bonus_bet: 0,
             spins: 0,
             biggest_win: 0,
         }
@@ -64,24 +61,18 @@ impl Reader<'_> {
 
 impl Profile {
     pub fn encode(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(256);
+        let mut out = Vec::with_capacity(128);
         out.extend_from_slice(&MAGIC.to_le_bytes());
         out.extend_from_slice(&self.balance.to_le_bytes());
         out.extend_from_slice(&self.bet_index.to_le_bytes());
         out.extend_from_slice(&self.level.to_le_bytes());
         out.extend_from_slice(&self.xp.to_le_bytes());
-        out.extend_from_slice(&self.daily_last.to_le_bytes());
-        out.extend_from_slice(&0u32.to_le_bytes());
-        for room in &self.pools {
-            for pool in room {
-                out.extend_from_slice(&pool.to_le_bytes());
-            }
+        for pool in &self.pools {
+            out.extend_from_slice(&pool.to_le_bytes());
         }
-        out.extend_from_slice(&self.fs_room.to_le_bytes());
-        out.extend_from_slice(&self.fs_left.to_le_bytes());
-        out.extend_from_slice(&self.fs_total.to_le_bytes());
-        out.extend_from_slice(&self.fs_win.to_le_bytes());
-        out.extend_from_slice(&self.wheel_room.to_le_bytes());
+        out.extend_from_slice(&u32::from(self.wheel_pending).to_le_bytes());
+        out.extend_from_slice(&self.fish_pending.to_le_bytes());
+        out.extend_from_slice(&self.bonus_bet.to_le_bytes());
         out.extend_from_slice(&self.spins.to_le_bytes());
         out.extend_from_slice(&self.biggest_win.to_le_bytes());
         out
@@ -89,33 +80,36 @@ impl Profile {
 
     pub fn decode(bytes: &[u8]) -> Option<Profile> {
         let mut r = Reader { bytes, at: 0 };
-        if r.u32()? != MAGIC {
+        let magic = r.u32()?;
+        if magic != MAGIC && magic != MAGIC_ROOMS {
             return None;
         }
         let balance = r.i64()?;
         let bet_index = r.u32()?;
         let level = r.u32()?.max(1);
         let xp = r.i64()?;
-        let daily_last = r.i64()?;
-        r.u32()?;
-        let mut pools = [[0i64; 4]; ROOM_COUNT];
-        for room in pools.iter_mut() {
-            for pool in room.iter_mut() {
-                *pool = r.i64()?;
-            }
+        if magic == MAGIC_ROOMS {
+            return Some(Profile {
+                balance,
+                bet_index,
+                level,
+                xp,
+                ..Profile::default()
+            });
+        }
+        let mut pools = [0i64; 4];
+        for pool in pools.iter_mut() {
+            *pool = r.i64()?;
         }
         Some(Profile {
             balance,
             bet_index,
             level,
             xp,
-            daily_last,
             pools,
-            fs_room: r.i32()?,
-            fs_left: r.u32()?,
-            fs_total: r.u32()?,
-            fs_win: r.i64()?,
-            wheel_room: r.i32()?,
+            wheel_pending: r.u32()? != 0,
+            fish_pending: r.i32()?,
+            bonus_bet: r.i64()?,
             spins: r.i64()?,
             biggest_win: r.i64()?,
         })
@@ -135,15 +129,15 @@ mod tests {
         let dir = dir.to_string_lossy().to_string();
         let mut profile = Profile::default();
         profile.balance = 123_456;
-        profile.pools[2][3] = 77;
-        profile.fs_room = 1;
+        profile.pools[3] = 77;
+        profile.fish_pending = 2;
         let vault = Vault::open(&dir);
         let mut rng = Rng::seeded(7);
         assert!(vault.store(&profile.encode(), &mut rng));
         let raw = std::fs::read(std::path::Path::new(&dir).join("frost.vault")).unwrap_or_default();
         assert!(!raw.windows(8).any(|w| w == 123_456i64.to_le_bytes()));
         let loaded = vault.load().and_then(|b| Profile::decode(&b));
-        assert!(loaded.as_ref().is_some_and(|p| p.balance == 123_456 && p.pools[2][3] == 77 && p.fs_room == 1));
+        assert!(loaded.as_ref().is_some_and(|p| p.balance == 123_456 && p.pools[3] == 77 && p.fish_pending == 2));
         assert!(Vault::open("elsewhere").load().is_none());
     }
 }
